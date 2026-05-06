@@ -1,0 +1,47 @@
+# Rust / Cargo
+/target/
+/Cargo.lock
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/icons/
+/src-tauri/capabilities/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.AppImage
+*.msi
+*.dmg
+*.deb
+
+# Frontend (if using npm/pnpm)
+/src-tauri/web/node_modules/
+/src-tauri/web/dist/
+
+# Debug / Profiling
+*.profraw
+*.profdata
