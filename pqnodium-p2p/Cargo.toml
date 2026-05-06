@@ -1,0 +1,7 @@
+[package]
+name = "pqnodium-p2p"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pqnodium-core = { path = "../pqnodium-core" }

@@ -1,0 +1,12 @@
+[package]
+name = "pqnodium-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dev-dependencies]
+ml-kem = "0.2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rand = "0.8"
+

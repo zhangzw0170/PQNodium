@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+    "pqnodium-core",
+    "pqnodium-p2p",
+    "pqnodium-cli",
+]
