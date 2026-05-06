@@ -96,7 +96,7 @@ All docs are in `doc/` with bilingual content. Key files:
 |-------|-------|--------|
 | 0 | Workspace skeleton, CI, directory structure | Done |
 | 1 | Core crypto (identity, encryption, message protocol) | Done |
-| 2 | P2P layer (libp2p, Kademlia, QUIC) | Current |
-| 3 | CLI interface | Pending |
+| 2 | P2P layer (libp2p, Kademlia, QUIC) | Done |
+| 3 | CLI interface | Current |
 | 3b | Tauri shell + frontend scaffold | Pending |
 | 4+ | NAT traversal, groups, full GUI, mobile | Future |

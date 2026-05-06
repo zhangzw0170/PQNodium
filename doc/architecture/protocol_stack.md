@@ -12,8 +12,9 @@
 | **Identity** | PeerId, Identity, PublicIdentity (hybrid sign/verify) | `identity.rs` | ✅ Done |
 | **Message Protocol** | MessageHeader, Message (wire format + AEAD) | `message.rs` | ✅ Done |
 | **Session State** | HandshakeSession, SessionKeys (state machine) | `state.rs` | ✅ Done |
-| **Transport** | QUIC (via `quinn` / `libp2p-quic`) | — | ⏳ Phase 2 |
-| **Discovery** | Kademlia DHT + mDNS | — | ⏳ Phase 2 |
+| **Transport** | QUIC (via `quinn` / `libp2p-quic`) | `pqnodium-p2p/src/transport.rs` | ✅ Done |
+| **Discovery** | Kademlia DHT + mDNS | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
+| **P2P Node** | PqNode (Swarm wrapper, event loop) | `pqnodium-p2p/src/node.rs` | ✅ Done |
 | **Group** | GossipSub / MLS | — | ⏳ Phase 5+ |
 | **Application** | JSON-RPC over IPC (Tauri) | — | ⏳ Phase 3b |
 

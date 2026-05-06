@@ -214,8 +214,8 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 |------|------|---------|
 | **Phase 0** | 项目骨架 | Cargo workspace, CI (`x86_64-pc-windows-msvc` + `x86_64-unknown-linux-gnu`), 基本目录结构 | ✅ Done |
 | **Phase 1** | 核心层 | 身份系统 (Ed25519+ML-DSA)、加密 (X25519+ML-KEM)、消息协议 | ✅ Done |
-| **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 | ⏳ Current |
-| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ⏳ Pending |
+| **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 | ✅ Done |
+| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ⏳ Current |
 | **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC 通道、前端脚手架 | ⏳ Pending |
 
 **✅ 首个里程碑交付**:

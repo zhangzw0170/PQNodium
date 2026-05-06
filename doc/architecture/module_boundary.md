@@ -13,7 +13,7 @@ PQNodium/
 │   ├── identity.rs         #   身份管理（密钥存储、PeerId 生成）    ✅
 │   ├── message.rs          #   消息协议（编解码、序列化）           ✅
 │   └── state.rs            #   会话状态机                         ✅
-├── pqnodium-p2p/           # libp2p 集成（QUIC、Kademlia、GossipSub、Relay） ⏳ Phase 2
+├── pqnodium-p2p/           # libp2p 集成（QUIC、Kademlia、Identify、mDNS、Ping） ✅
 ├── pqnodium-cli/           # 终端界面                              ⏳ Phase 3
 └── src-tauri/              # Tauri v2 应用壳 + React 前端         ⏳ Phase 3b
 ```
