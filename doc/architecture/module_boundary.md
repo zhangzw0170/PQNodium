@@ -6,16 +6,16 @@
 PQNodium/
 ├── pqnodium-core/          # 纯 Rust 业务逻辑（无网络、无 UI 依赖）
 │   ├── crypto/             #   密码学 trait + adapter（最大模块化，可独立替换）
-│   │   ├── traits/         #     纯 trait，零外部依赖
-│   │   ├── hybrid/         #     PQ/T 组合逻辑
-│   │   ├── backend/        #     具体 crate adapter（pqc/, sm/）
-│   │   └── conformance/    #     统一测试套件
-│   ├── identity/           #   身份管理（密钥存储、PeerId 生成）
-│   ├── message/            #   消息协议（编解码、序列化）
-│   └── state/              #   会话状态机
-├── pqnodium-p2p/           # libp2p 集成（QUIC、Kademlia、GossipSub、Relay）
-├── pqnodium-cli/           # 终端界面
-└── src-tauri/              # Tauri v2 应用壳 + React 前端
+│   │   ├── traits/         #     纯 trait，零外部依赖              ✅
+│   │   ├── hybrid/         #     PQ/T 组合逻辑                    ✅
+│   │   ├── backend/pqc/    #     具体 crate adapter               ✅
+│   │   └── conformance/    #     统一测试套件                     ⏳ Phase 2
+│   ├── identity.rs         #   身份管理（密钥存储、PeerId 生成）    ✅
+│   ├── message.rs          #   消息协议（编解码、序列化）           ✅
+│   └── state.rs            #   会话状态机                         ✅
+├── pqnodium-p2p/           # libp2p 集成（QUIC、Kademlia、GossipSub、Relay） ⏳ Phase 2
+├── pqnodium-cli/           # 终端界面                              ⏳ Phase 3
+└── src-tauri/              # Tauri v2 应用壳 + React 前端         ⏳ Phase 3b
 ```
 
 ## Dependency Rules

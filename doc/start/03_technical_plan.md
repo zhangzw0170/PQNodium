@@ -39,7 +39,7 @@
 | ML-KEM (密钥封装) | `ml-kem` (RustCrypto) | FIPS 203，稳定 | adapter 隔离，可替换 |
 | ML-DSA (签名) | `crystals-dilithium` | FIPS 204 | adapter 隔离，可替换 |
 | X25519 | `x25519-dalek` | 稳定 | 与 ml-kem 组合 Hybrid KEM |
-| Noise + PQC | `clatter` | 实验性 | ⚠️ adapter 隔离，随时可能需替换 |
+| Noise + PQC | `clatter` | 实验性 | ❌ 未采用，Hybrid KEM 基于 ml-kem + x25519-dalek 自行组合 |
 | 群组消息 | `openmls` / `saorsa-mls` | 实验性 | 独立模块，不影响 1:1 |
 | 敏感数据清零 | `zeroize` (RustCrypto) | 稳定 | — |
 | 序列化（按需） | `serde` + `serde_json` | 稳定 | 仅在跨进程/持久化时引入 |
@@ -212,11 +212,11 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 
 | 阶段 | 目标 | 关键交付 |
 |------|------|---------|
-| **Phase 0** | 项目骨架 | Cargo workspace, CI (`x86_64-pc-windows-msvc` + `x86_64-unknown-linux-gnu`), 基本目录结构 |
-| **Phase 1** | 核心层 | 身份系统 (Ed25519+ML-DSA)、加密 (X25519+ML-KEM)、消息协议 |
-| **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 |
-| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 |
-| **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC 通道、前端脚手架 |
+| **Phase 0** | 项目骨架 | Cargo workspace, CI (`x86_64-pc-windows-msvc` + `x86_64-unknown-linux-gnu`), 基本目录结构 | ✅ Done |
+| **Phase 1** | 核心层 | 身份系统 (Ed25519+ML-DSA)、加密 (X25519+ML-KEM)、消息协议 | ✅ Done |
+| **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 | ⏳ Current |
+| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ⏳ Pending |
+| **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC 通道、前端脚手架 | ⏳ Pending |
 
 **✅ 首个里程碑交付**:
 - [ ] Windows 节点 ↔ Linux 节点 直连成功

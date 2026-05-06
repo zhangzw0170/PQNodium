@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p, QUIC, and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Currently in Phase 0 (project skeleton / planning) — no source code yet, only documentation and design specs.
+PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p, QUIC, and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phase 1 (core crypto) is complete — identity system, hybrid key exchange, hybrid signatures, message protocol, and session state machine are all implemented and tested.
 
 **Language convention**: Documentation and commit messages are bilingual (Chinese primary, English secondary). Code, variable names, and technical terms are in English.
 
@@ -83,7 +83,7 @@ cargo audit                        # Dependency vulnerability scan
 All docs are in `doc/` with bilingual content. Key files:
 
 - `doc/start/03_technical_plan.md` — Full architecture, tech stack rationale, milestones
-- `doc/architecture/` — Protocol stack, module boundaries, threat model (many are stubs pending Phase 1)
+- `doc/architecture/` — Protocol stack, module boundaries, threat model
 - `doc/REFERENCE.md` — All referenced standards, RFCs, crates, and resources
 - `doc/build/BUILD.md` — Build prerequisites and instructions
 - `doc/development/coding_standards.md` — Detailed coding rules
@@ -94,9 +94,9 @@ All docs are in `doc/` with bilingual content. Key files:
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 0 | Workspace skeleton, CI, directory structure | Current |
-| 1 | Core crypto (identity, encryption, message protocol) | Pending |
-| 2 | P2P layer (libp2p, Kademlia, QUIC) | Pending |
+| 0 | Workspace skeleton, CI, directory structure | Done |
+| 1 | Core crypto (identity, encryption, message protocol) | Done |
+| 2 | P2P layer (libp2p, Kademlia, QUIC) | Current |
 | 3 | CLI interface | Pending |
 | 3b | Tauri shell + frontend scaffold | Pending |
 | 4+ | NAT traversal, groups, full GUI, mobile | Future |

@@ -6,8 +6,8 @@ This directory contains the security risk analysis for each phase of PQNodium de
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| **Phase 0** | [Project Setup & Risk Identification](./phase0_risk.md) | 📝 In Progress |
-| **Phase 1** | Core Crypto Implementation | ⏳ Pending |
+| **Phase 0** | [Project Setup & Risk Identification](./phase0_risk.md) | ✅ Complete |
+| **Phase 1** | Core Crypto Implementation | ✅ Complete |
 | **Phase 2** | P2P Network (libp2p + QUIC) | ⏳ Pending |
 | **Phase 3** | CLI & Tauri Shell | ⏳ Pending |
 

@@ -1,7 +1,7 @@
-//! Pluggable cryptography layer.
-//!
-//! Traits are defined here; concrete implementations live in backend adapters.
-//! Phase 1 will add `KeyEncapsulation`, `Signer`, and `AeadCipher` traits.
+pub mod backend;
+pub mod conformance;
+pub mod hybrid;
+pub mod traits;
 
 #[cfg(test)]
 mod tests {
@@ -10,10 +10,6 @@ mod tests {
     use rand::rngs::OsRng;
     use x25519_dalek::{EphemeralSecret, PublicKey};
 
-    /// Spike finding: ml-kem uses `KemCore` trait with `generate()`.
-    /// Key types are `EncapsulationKey` / `DecapsulationKey`, not raw bytes.
-    /// `as_bytes()` returns `Encoded<Self>` (fixed-size array).
-    /// `SharedKey` is `B32` (32 bytes).
     #[test]
     fn ml_kem_768_roundtrip() {
         let (dk, ek) = MlKem768::generate(&mut OsRng);
@@ -22,8 +18,6 @@ mod tests {
         assert_eq!(ss_sender, ss_receiver, "shared secrets must match");
     }
 
-    /// Spike finding: x25519-dalek uses `random_from_rng`, not `random`.
-    /// `EphemeralSecret::new` is deprecated.
     #[test]
     fn x25519_ecdh_roundtrip() {
         let secret_alice = EphemeralSecret::random_from_rng(OsRng);
@@ -40,8 +34,6 @@ mod tests {
         );
     }
 
-    /// Confirm both KEMs produce non-empty shared secrets side by side.
-    /// Phase 1 will combine via KDF(ss_classic || ss_pqc).
     #[test]
     fn hybrid_kem_both_succeed() {
         let sec_a = EphemeralSecret::random_from_rng(OsRng);
@@ -59,12 +51,9 @@ mod tests {
         let _ = (ss_classic, ss_pqc);
     }
 
-    /// Spike finding: key sizes match documentation.
-    /// ml-kem keys accessed via `.as_bytes().len()`.
     #[test]
     fn key_sizes_match_docs() {
         let (dk, ek) = MlKem768::generate(&mut OsRng);
-        // Doc: ML-KEM-768 public key 1184 B, secret key 2400 B
         assert_eq!(ek.as_bytes().len(), 1184, "ML-KEM-768 public key size");
         assert_eq!(
             dk.encapsulation_key().as_bytes().len(),
