@@ -25,7 +25,7 @@
 | 错误类型 | `std::error::Error`；公共 API Error enum 用 `thiserror` 派生 |
 | 哈希（非密码学） | `std::collections::hash_map` / `std::hash` |
 | 序列化 | 优先 `std::fmt` / 手动解析；仅在跨进程/持久化时引入 `serde` |
-| 随机数（非密码学） | `std::rand`；密码学安全随机数由 PQC crate 自带 |
+| 随机数（非密码学） | `rand` crate；密码学安全随机数由 PQC crate 自带 |
 | 文件 I/O | `std::fs` / `std::io` |
 | 时间 | `std::time` |
 | 线程同步 | `std::sync`（配合 tokio） |
@@ -38,6 +38,7 @@
 | QUIC | `quinn` | 稳定 | — |
 | ML-KEM (密钥封装) | `ml-kem` (RustCrypto) | FIPS 203，稳定 | adapter 隔离，可替换 |
 | ML-DSA (签名) | `crystals-dilithium` | FIPS 204 | adapter 隔离，可替换 |
+| X25519 | `x25519-dalek` | 稳定 | 与 ml-kem 组合 Hybrid KEM |
 | Noise + PQC | `clatter` | 实验性 | ⚠️ adapter 隔离，随时可能需替换 |
 | 群组消息 | `openmls` / `saorsa-mls` | 实验性 | 独立模块，不影响 1:1 |
 | 敏感数据清零 | `zeroize` (RustCrypto) | 稳定 | — |
@@ -45,7 +46,7 @@
 
 > **注意**:
 > - 标记为"实验性"的 crate 是最大的替换风险点。模块化设计确保它们被隔离在 adapter 层，替换时无需修改上层协议逻辑。
-> - `rustpq`（Hybrid KEM）和 `qcomm-core`（PQ Triple Ratchet）的 GitHub 仓库已失效，实现时需重新评估是否采用，或基于 `ml-kem` + `x25519-dalek` 自行组合。
+> - `rustpq` 和 `qcomm-core` 的 GitHub 仓库已失效，不采用。Hybrid KEM 基于 `ml-kem` + `x25519-dalek` 自行组合。
 > - 详见 [References](../REFERENCE.md)。
 
 ## 通信协议栈

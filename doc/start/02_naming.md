@@ -23,8 +23,7 @@
 ```
 PQNodium
 ├── pqnodium-core      核心逻辑 (身份、加密、消息)
-├── pqnodium-p2p       P2P 网络层 (libp2p 封装)
+├── pqnodium-p2p       P2P 网络层 (libp2p、QUIC、Kademlia、GossipSub、Relay)
 ├── pqnodium-cli       CLI 界面
-├── pqnodium-gui       GUI 界面 (待定框架)
-└── pqnodium-relay     可选的中继节点 (relay fallback)
+└── src-tauri/         Tauri v2 桌面应用 (Rust 后端 + React 前端)
 ```

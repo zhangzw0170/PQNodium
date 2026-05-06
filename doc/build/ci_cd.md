@@ -9,4 +9,4 @@
 4.  **audit.yml**: Run `cargo audit` for security vulnerabilities.
 
 ## Local Pre-Commit
-- Use `cargo precommit` or a git hook to run lint/test before committing.
+- Use a git hook to run `cargo fmt --check && cargo clippy && cargo test` before committing.

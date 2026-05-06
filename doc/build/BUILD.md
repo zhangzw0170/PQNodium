@@ -37,4 +37,4 @@ cargo tauri dev
 
 ## Cross-Compilation
 
-See [Cross-Compilation Guide](./doc/build/cross_compile.md).
+See [Cross-Compilation Guide](./cross_compile.md).

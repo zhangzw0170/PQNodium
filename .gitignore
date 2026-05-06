@@ -45,3 +45,6 @@ desktop.ini
 # Debug / Profiling
 *.profraw
 *.profdata
+
+# Reference Origin
+doc/reference/

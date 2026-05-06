@@ -105,4 +105,4 @@ fn hybrid_verify<S1: Signer, S2: Signer>(...) -> bool;
 | `clatter` (Noise+PQC) | 仅 `hybrid/hybrid_kem.rs` 中的调用点 | 实验性 |
 | `openmls` / `saorsa-mls` | 仅群组消息模块，不影响 1:1 通信 | 实验性，Phase 5+ |
 
-> `rustpq` 和 `qcomm-core` 的 GitHub 仓库已失效，实现时需基于 `ml-kem` + `x25519-dalek` 自行组合替代。详见 [References](../REFERENCE.md)。
+> `rustpq` 和 `qcomm-core` 已失效，不采用。Hybrid KEM 基于 `ml-kem` + `x25519-dalek` 自行组合。详见 [References](../REFERENCE.md)。

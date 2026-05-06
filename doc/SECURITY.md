@@ -14,7 +14,7 @@ We will acknowledge receipt within 48 hours and provide a detailed response with
 
 ## Threat Model
 
-See our detailed [Threat Model](./doc/architecture/threat_model.md).
+See our detailed [Threat Model](./architecture/threat_model.md).
 
 ### Current Security Focus
 - **Post-Quantum Cryptography**: ML-KEM for key exchange, ML-DSA for signatures.

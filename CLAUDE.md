@@ -61,17 +61,22 @@ cargo audit                        # Dependency vulnerability scan
 
 - **Rust edition**: 2021+
 - **Async runtime**: tokio
-- **Error handling**: `std::error::Error` for simple cases; `thiserror` derive for library Error enums; `anyhow` only in binary crates.
-- **Security**: `zeroize` trait on all sensitive data (keys, secrets). Constant-time comparisons for MACs/signatures.
+- **Error handling**: `std::error::Error` for simple cases; `thiserror` derive for library Error enums; `anyhow` only in binary crates. No `unwrap()` in library code.
+- **Security**: `zeroize` trait on all sensitive data (keys, secrets). Constant-time comparisons for MACs/signatures. No custom crypto.
 - **Docs**: `///` doc comments required on all public items.
 - **Aim for `no_std`** compatibility in core logic (except crypto/network modules).
+- **Std-first**: Prefer `std` over third-party crates. See `doc/development/coding_standards.md` for full list.
 
 ## Git Workflow
 
 - **`dev`** is the active development branch. All PRs target `dev`.
 - **`main`** is stable releases, merged from `dev` during releases.
+- **Branch naming**: `feat/<scope>-<desc>`, `fix/<scope>-<desc>`, `hotfix/<desc>`, `docs/<desc>`.
 - **Conventional Commits**: `type(scope): description` (e.g., `feat(pqc): add ML-KEM key generation`)
+  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
+  - Scopes: `pqc`, `crypto`, `identity`, `message`, `network`, `dht`, `cli`, `tauri`, `deps`, `ci`
 - **Squash merge** to keep history clean.
+- Full details: `doc/development/git_workflow.md`
 
 ## Documentation Structure
 
