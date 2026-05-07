@@ -8,16 +8,85 @@ PQNodium is a post-quantum secure, decentralized messaging protocol built with R
 
 **Language convention**: Documentation and commit messages are bilingual (Chinese primary, English secondary). Code, variable names, and technical terms are in English.
 
+## Build & Test Commands
+
+```bash
+# Build
+cargo build --release -p pqnodium-cli          # CLI binary
+cargo build --release -p pqnodium-core         # Core library
+cargo build --release -p pqnodium-p2p          # P2P library
+cargo tauri dev                                 # Tauri app (frontend not yet scaffolded)
+cross build --target x86_64-unknown-linux-gnu --release  # Cross-compile Win → Linux
+
+# Test
+cargo test                                     # All tests
+cargo test -p pqnodium-core                    # Core only
+cargo test -p pqnodium-p2p                     # P2P only
+cargo test -p pqnodium-cli                     # CLI only
+cargo test --test eight_node_mesh              # Specific integration test
+cargo test hybrid_kem_roundtrip                # Single test by name
+cargo test -- --nocapture                      # Show output
+
+# Lint & Format
+cargo fmt                                      # Format
+cargo clippy -- -D warnings                    # Lint (warnings as errors)
+cargo audit                                    # Dependency vulnerability scan
+```
+
+Prerequisites: Rust 1.80+, CMake, Node.js 18+ (for Tauri). See `doc/build/BUILD.md` for details.
+
 ## Architecture
 
-### Workspace Crates
+### Crate Dependency Graph
 
 ```
-pqnodium-core    — Pure Rust business logic (Crypto, Protocol, State). Aim for no_std compat where possible.
-pqnodium-p2p     — libp2p integration: QUIC + TCP transport, Kademlia DHT, Identify, Ping.
-pqnodium-cli     — Terminal interface (tokio + clap).
-pqnodium-app    — Tauri v2 app shell (src-tauri/). IPC stubs only; frontend not yet scaffolded.
+pqnodium-core  ←  pqnodium-p2p  ←  pqnodium-cli
+                  (libp2p)        (tokio + clap)
+                  pqnodium-core  ←  src-tauri (Tauri v2 app shell)
 ```
+
+`pqnodium-core` has zero async/network dependencies. `pqnodium-p2p` wraps libp2p behind a `PqNode` API. Both `pqnodium-cli` and `src-tauri` are consumers.
+
+### pqnodium-core: Crypto & Protocol
+
+Four public modules: `crypto`, `identity`, `message`, `state`.
+
+**Crypto trait hierarchy** — the key architectural pattern:
+- `traits/kem.rs`: `KeyEncapsulation` trait (generic over PublicKey/SecretKey)
+- `traits/sign.rs`: `Signer` trait
+- `traits/aead.rs`: `AeadCipher` trait
+- `backend/pqc/`: Concrete implementations (`X25519Kem`, `MlKem768Kem`, `Ed25519Signer`, `MlDsa65Signer`, `ChaCha20Poly1305Cipher`)
+- `hybrid/`: Generic `HybridKem<K1, K2>` and `HybridSignature<S1, S2>` that compose any two implementations via the traits
+
+**Hybrid KEM construction**: `HybridKem<X25519Kem, MlKem768Kem>` — shared secret = `SHA-256(classic_ss || pqc_ss)`. Ciphertext is length-prefixed: `[classic_ct_len: u16][classic_ct][pqc_ct]` (total 1122 bytes).
+
+**Identity system** (`identity.rs`): `Identity` holds Ed25519 + ML-DSA-65 keypairs. `PeerId` is `SHA-256("pqnodium-peerid-v1" || ed_pk || ml_pk)`. This is **separate from** libp2p's `PeerId` (derived from Ed25519 transport keypair in `pqnodium-p2p`).
+
+**Handshake state machine** (`state.rs`): `HandshakeSession` implements a 2-round hybrid handshake:
+- Round 1 (Initiator → Responder): `[x25519_pk: 32][ml_kem_pk: 1184]` = 1216 bytes
+- Round 2 (Responder → Initiator): `[resp_pk: 1216][hybrid_ct: 1122]` = 2338 bytes
+- States: `Idle → Initiated → Completed` (initiator) or `Idle → Completed` (responder)
+- After completion, `SessionKeys` provides `encrypt`/`decrypt` via ChaCha20Poly1305 with monotonic nonce counters
+
+**Message wire format** (`message.rs`): 8-byte header `[version:1][type:1][reserved:2][payload_len:4 BE]` + `[nonce:12]` + `[ciphertext]`. Types: `HandshakeInit(0x01)`, `HandshakeResponse(0x02)`, `HandshakeComplete(0x03)`, `Data(0x10)`, `Ack(0x11)`.
+
+### pqnodium-p2p: libp2p Integration
+
+Modules: `node` (PqNode), `behaviour` (PqBehaviour), `transport`, `config`, `event`, `error`.
+
+**Transport**: QUIC (quinn) preferred, TCP+Noise+Yamux fallback via `OrTransport`. Keypair generated per-node with `Keypair::generate_ed25519()`.
+
+**Behaviour composition** (`PqBehaviour`): `Kademlia<MemoryStore>` + `Identify` + `Ping`. mDNS intentionally excluded (causes stale peer discovery on shared networks).
+
+**Event loop**: `PqNode::poll_next()` wraps `Swarm::next()` and maps libp2p swarm events into `PqEvent` enum. `PqNode::run()` provides a callback-based loop. Identify-discovered addresses are auto-added to Kademlia routing table.
+
+**Config**: `PqNodeConfig` with builder pattern. Default: bind `0.0.0.0:0/quic-v1`, 4 MiB max message, 128 max connections, 60s Kademlia query timeout.
+
+### pqnodium-cli: Terminal Interface
+
+Two subcommands via clap: `generate` (create identity keypair) and `start` (run P2P node with interactive REPL).
+
+**Identity file format**: `[magic: 18 bytes][ed_pk_len: u32 LE][ed_pk][ed_sk_len: u32 LE][ed_sk][ml_pk_len: u32 LE][ml_pk][ml_sk_len: u32 LE][ml_sk][HMAC-SHA256: 32]`. HMAC key = `SHA-256(ed_sk || ml_sk)`. Uses `subtle::ConstantTimeEq` for verification. File permissions set to owner-only (0600 on Unix, ACL on Windows).
 
 ### Protocol Stack (bottom-up)
 
@@ -32,30 +101,6 @@ UDP/TCP → QUIC (quinn) or TCP+Noise+Yamux → Identify → Ping → Kademlia D
 - **Hybrid signatures**: Both Ed25519 and ML-DSA-65 must verify.
 - **Key crates**: `ml-kem` (RustCrypto, FIPS 203), `crystals-dilithium` (FIPS 204). Never roll custom crypto implementations.
 - **Std-first**: Prefer `std` over third-party crates for error types, hashing (non-crypto), serialization (use `serde` only when cross-process/persistence is needed), I/O, and time.
-
-## Build Commands
-
-```bash
-# Core CLI
-cargo build --release -p pqnodium-cli
-
-# Tauri app (frontend not yet scaffolded)
-cargo tauri dev
-
-# Cross-compile Win → Linux
-cross build --target x86_64-unknown-linux-gnu --release
-
-# Targets: x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu
-```
-
-### Tooling
-
-```bash
-cargo fmt                          # Format
-cargo clippy -- -D warnings        # Lint
-cargo test                         # Tests
-cargo audit                        # Dependency vulnerability scan
-```
 
 ## Coding Standards
 

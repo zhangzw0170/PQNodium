@@ -2,13 +2,51 @@
 
 Thank you for your interest in contributing!
 
+## Development Environment Setup
+
+1. Install [Rust 1.80+](https://rustup.rs/) via rustup
+2. Install [CMake](https://cmake.org/) (required for native dependencies)
+3. Clone and build:
+   ```bash
+   git clone https://github.com/zhangzw0170/PQNodium.git
+   cd PQNodium
+   cargo build --workspace
+   ```
+
 ## Development Workflow
 
-1.  **Fork** the repository and create your branch from `dev`.
-2.  **Code** following our [Coding Standards](./coding_standards.md).
-3.  **Test** your changes. Ensure `cargo test` passes.
-4.  **Commit** with clear, descriptive messages.
-5.  **Push** to your fork and open a Pull Request against the `dev` branch.
+1. **Fork** the repository and create your branch from `dev`.
+2. **Code** following our [Coding Standards](./coding_standards.md).
+3. **Test** your changes. Ensure `cargo test` passes.
+4. **Commit** with clear, descriptive messages (see [Git Workflow](./git_workflow.md)).
+5. **Push** to your fork and open a Pull Request against the `dev` branch.
+
+<!-- AUTO-GENERATED:from:Cargo.toml -->
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `cargo build --workspace` | Build all crates |
+| `cargo build --release -p pqnodium-cli` | Build CLI (release) |
+| `cargo test` | Run all tests (125 tests) |
+| `cargo test -p pqnodium-core` | Run core tests only |
+| `cargo test -p pqnodium-p2p` | Run P2P tests only |
+| `cargo test -p pqnodium-p2p --test eight_node_mesh` | Run 8-node mesh integration test |
+| `cargo fmt` | Format code |
+| `cargo fmt --check` | Check formatting (CI gate) |
+| `cargo clippy -- -D warnings` | Lint (CI gate) |
+| `cargo audit` | Dependency vulnerability scan |
+| `cargo tauri dev` | Run Tauri app in dev mode |
+| `cargo run -p pqnodium-cli -- generate` | Generate a new identity |
+| `cargo run -p pqnodium-cli -- start` | Start P2P node |
+<!-- /AUTO-GENERATED -->
+
+## Testing
+
+- **Unit tests**: `#[cfg(test)] mod tests` in each source file
+- **Integration tests**: `pqnodium-p2p/tests/eight_node_mesh.rs` (8-node mesh topology)
+- **CI gate**: `cargo fmt --check` + `cargo clippy` + `cargo test` all must pass
+- **Coverage target**: 80%+
 
 ## Pull Request Guidelines
 
@@ -16,6 +54,7 @@ Thank you for your interest in contributing!
 - Link any relevant issues.
 - Ensure CI passes (lint, build, test).
 - Add tests for new features.
+- Squash merge to keep history clean.
 
 ## Communication
 
