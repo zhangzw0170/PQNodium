@@ -12,15 +12,16 @@
 | **Identity** | PeerId, Identity, PublicIdentity (hybrid sign/verify) | `identity.rs` | ✅ Done |
 | **Message Protocol** | MessageHeader, Message (wire format + AEAD) | `message.rs` | ✅ Done |
 | **Session State** | HandshakeSession, SessionKeys (state machine) | `state.rs` | ✅ Done |
-| **Transport** | QUIC (via `quinn` / `libp2p-quic`) | `pqnodium-p2p/src/transport.rs` | ✅ Done |
-| **Discovery** | Kademlia DHT + mDNS | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
+| **Transport** | QUIC + TCP (OrTransport) | `pqnodium-p2p/src/transport.rs` | ✅ Done |
+| **Discovery** | Kademlia DHT + Identify | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
 | **P2P Node** | PqNode (Swarm wrapper, event loop) | `pqnodium-p2p/src/node.rs` | ✅ Done |
+| **CLI** | Interactive terminal (clap + tokio) | `pqnodium-cli/src/main.rs` | ✅ Done |
 | **Group** | GossipSub / MLS | — | ⏳ Phase 5+ |
-| **Application** | JSON-RPC over IPC (Tauri) | — | ⏳ Phase 3b |
+| **Application** | Tauri IPC | `src-tauri/src/main.rs` | ✅ Stub only |
 
 ## Layers
-1.  **Transport**: QUIC (via `quinn` / `libp2p-quic`)
-2.  **Security**: Noise Protocol (Hybrid X25519 + ML-KEM-768)
-3.  **Network**: Kademlia DHT + mDNS
-4.  **Messaging**: Custom binary format or MLS
-5.  **Application**: JSON-RPC over IPC (Tauri)
+1.  **Transport**: QUIC (primary) + TCP+Noise+Yamux (fallback)
+2.  **Security**: Noise Protocol (TCP path), TLS 1.3 (QUIC path)
+3.  **Network**: Kademlia DHT + Identify
+4.  **Messaging**: Custom binary format (Phase 1)
+5.  **Application**: Tauri IPC (Phase 3b, stubs only)

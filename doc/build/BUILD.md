@@ -23,15 +23,11 @@ PQNodium targets `x86_64` architecture for Windows and Linux.
 cargo build --release -p pqnodium-cli
 ```
 
-### Tauri Frontend
+### Tauri App
 
 ```bash
-# Install frontend dependencies
-cd src-tauri/web
-npm install
-
+# Frontend not yet scaffolded (React + TypeScript + Tailwind planned)
 # Build and run Tauri app
-cd ../..
 cargo tauri dev
 ```
 

@@ -29,7 +29,7 @@ pqnodium-core/src/crypto/
 │       ├── ed25519.rs                                  ✅ Done
 │       ├── x25519.rs                                   ✅ Done
 │       └── chacha20.rs                                 ✅ Done
-└── conformance/      # 统一测试套件                     ⏳ Phase 2
+└── conformance/      # 统一测试套件                     空 (占位)
 ```
 
 ## Pluggable Backends
@@ -97,6 +97,6 @@ fn hybrid_verify<S1: Signer, S2: Signer>(...) -> bool;
 | `x25519-dalek` | 仅 `backend/pqc/x25519.rs` | 稳定 |
 | `ed25519-dalek` | 仅 `backend/pqc/ed25519.rs` | 稳定 |
 | `chacha20poly1305` | 仅 `backend/pqc/chacha20.rs` | 稳定 |
-| `openmls` / `saorsa-mls` | 仅群组消息模块，不影响 1:1 通信 | 实验性，Phase 5+ |
+| `openmls` | 仅群组消息模块，不影响 1:1 通信 | Phase 5+ |
 
-> `rustpq` 和 `qcomm-core` 已失效，不采用。`clatter` 亦未采用，Hybrid KEM 基于 `ml-kem` + `x25519-dalek` 自行组合。详见 [References](../REFERENCE.md)。
+> `rustpq` 和 `qcomm-core` 已失效，不采用。Hybrid KEM 基于 `ml-kem` + `x25519-dalek` 自行组合。详见 [References](../REFERENCE.md)。

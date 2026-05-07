@@ -9,13 +9,20 @@ PQNodium/
 │   │   ├── traits/         #     纯 trait，零外部依赖              ✅
 │   │   ├── hybrid/         #     PQ/T 组合逻辑                    ✅
 │   │   ├── backend/pqc/    #     具体 crate adapter               ✅
-│   │   └── conformance/    #     统一测试套件                     ⏳ Phase 2
+│   │   └── conformance/    #     统一测试套件                     空 (占位)
 │   ├── identity.rs         #   身份管理（密钥存储、PeerId 生成）    ✅
 │   ├── message.rs          #   消息协议（编解码、序列化）           ✅
 │   └── state.rs            #   会话状态机                         ✅
-├── pqnodium-p2p/           # libp2p 集成（QUIC、Kademlia、Identify、mDNS、Ping） ✅
-├── pqnodium-cli/           # 终端界面                              ⏳ Phase 3
-└── src-tauri/              # Tauri v2 应用壳 + React 前端         ⏳ Phase 3b
+├── pqnodium-p2p/           # libp2p 集成（QUIC+TCP、Kademlia、Identify、Ping） ✅
+│   ├── lib.rs              #   模块导出                           ✅
+│   ├── config.rs           #   节点配置                           ✅
+│   ├── error.rs            #   错误类型                           ✅
+│   ├── event.rs            #   事件枚举                           ✅
+│   ├── transport.rs        #   QUIC + TCP 双传输                 ✅
+│   ├── behaviour.rs        #   Kademlia + Identify + Ping         ✅
+│   └── node.rs             #   PqNode (Swarm 封装)               ✅
+├── pqnodium-cli/           # 终端界面                              ✅
+└── src-tauri/              # Tauri v2 应用壳 (pqnodium-app)       ✅ (IPC stub only)
 ```
 
 ## Dependency Rules

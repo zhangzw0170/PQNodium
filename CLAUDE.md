@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p, QUIC, and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phase 1 (core crypto) is complete — identity system, hybrid key exchange, hybrid signatures, message protocol, and session state machine are all implemented and tested.
+PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p (QUIC + TCP), and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phases 0–3 are complete — workspace skeleton, core crypto layer, P2P networking, and CLI interface are all implemented and tested.
 
 **Language convention**: Documentation and commit messages are bilingual (Chinese primary, English secondary). Code, variable names, and technical terms are in English.
 
@@ -14,15 +14,15 @@ PQNodium is a post-quantum secure, decentralized messaging protocol built with R
 
 ```
 pqnodium-core    — Pure Rust business logic (Crypto, Protocol, State). Aim for no_std compat where possible.
-pqnodium-p2p     — libp2p integration: QUIC transport, Kademlia DHT, GossipSub, Relay.
-pqnodium-cli     — Terminal interface (tokio-based async).
-src-tauri/       — Tauri v2 app shell + IPC handlers. Frontend at src-tauri/web/ (React + TypeScript + Tailwind).
+pqnodium-p2p     — libp2p integration: QUIC + TCP transport, Kademlia DHT, Identify, Ping.
+pqnodium-cli     — Terminal interface (tokio + clap).
+pqnodium-app    — Tauri v2 app shell (src-tauri/). IPC stubs only; frontend not yet scaffolded.
 ```
 
 ### Protocol Stack (bottom-up)
 
 ```
-UDP → QUIC (quinn, TLS 1.3) → Noise PQ Hybrid (X25519 + ML-KEM-768) → MLS/Custom messaging (ChaCha20-Poly1305) → App layer (JSON-RPC over IPC for Tauri)
+UDP/TCP → QUIC (quinn) or TCP+Noise+Yamux → Identify → Ping → Kademlia DHT → App layer
 ```
 
 ### Crypto Design
@@ -36,11 +36,11 @@ UDP → QUIC (quinn, TLS 1.3) → Noise PQ Hybrid (X25519 + ML-KEM-768) → MLS/
 ## Build Commands
 
 ```bash
-# Core CLI (once workspace exists)
+# Core CLI
 cargo build --release -p pqnodium-cli
 
-# Tauri frontend
-cd src-tauri/web && npm install && cd ../.. && cargo tauri dev
+# Tauri app (frontend not yet scaffolded)
+cargo tauri dev
 
 # Cross-compile Win → Linux
 cross build --target x86_64-unknown-linux-gnu --release
@@ -98,5 +98,5 @@ All docs are in `doc/` with bilingual content. Key files:
 | 1 | Core crypto (identity, encryption, message protocol) | Done |
 | 2 | P2P layer (libp2p, Kademlia, QUIC) | Done |
 | 3 | CLI interface | Current |
-| 3b | Tauri shell + frontend scaffold | Pending |
+| 3b | Tauri shell + frontend scaffold | Done (shell only, no frontend) |
 | 4+ | NAT traversal, groups, full GUI, mobile | Future |

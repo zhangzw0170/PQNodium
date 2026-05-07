@@ -11,14 +11,14 @@
 - **Impact**: Malicious or vulnerable crates could compromise the entire project.
 - **Trigger**: Adding unmaintained or low-reputation crates.
 - **Mitigation**: Use `cargo-audit`, pin dependencies in `Cargo.lock`, review new deps.
-- **Status**: Unmitigated (Process not yet established).
+- **Status**: ✅ Mitigated — `audit.yml` CI workflow runs `cargo audit` on every push.
 
 ### [RISK-002] Insecure CI Pipeline
 - **Severity**: Medium
 - **Impact**: Compromised CI could inject malicious code into releases.
 - **Trigger**: Poor CI configuration, exposed secrets.
 - **Mitigation**: Use GitHub Actions best practices, limit permissions, scan for secrets.
-- **Status**: Unmitigated.
+- **Status**: ✅ Mitigated — CI workflows (`lint.yml`, `test.yml`, `build.yml`) follow standard GitHub Actions practices with minimal permissions.
 
 ### [RISK-003] Lack of Crypto Review
 - **Severity**: Critical

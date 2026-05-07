@@ -1,12 +1,26 @@
 # Tauri IPC Interface
 
-*Stub: To be defined during Phase 3b.*
+*Updated: Phase 3b shell exists with stub commands.*
 
-## Commands (Frontend → Core)
-- `init()`
-- `send_message(peer_id, content)`
-- `get_contacts()`
+## Implemented Commands (src-tauri/src/main.rs)
 
-## Events (Core → Frontend)
-- `message_received`
-- `peer_connected`
+| Command | Description |
+|---------|-------------|
+| `get_peer_id` | Returns the local node's Peer ID |
+| `get_version` | Returns the application version string |
+
+## Planned Commands (Phase 4+)
+
+| Command | Description |
+|---------|-------------|
+| `init` | Initialize node with identity |
+| `send_message(peer_id, content)` | Send encrypted message to peer |
+| `get_contacts` | List known peers |
+
+## Planned Events (Core → Frontend)
+
+| Event | Description |
+|-------|-------------|
+| `message_received` | Incoming encrypted message |
+| `peer_connected` | New peer connected |
+| `peer_disconnected` | Peer disconnected |

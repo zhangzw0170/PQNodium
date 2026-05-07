@@ -1,6 +1,6 @@
 # Threat Model
 
-*Stub: To be expanded during Phase 1.*
+*Updated: Phase 0-2 complete. Threat model will be expanded during Phase 4+ when networking hardens.*
 
 ## Assumptions
 - Adversaries may have classical computing capabilities.
@@ -12,7 +12,9 @@
 3.  **Metadata**: Minimized via P2P routing, but not fully hidden.
 
 ## Attack Vectors
-- **MITM**: Mitigated by Hybrid Signatures + Out-of-band verification.
-- **Replay**: Sequence numbers + AEAD.
-- **DoS**: Rate limiting at the libp2p level.
+- **MITM**: Mitigated by Hybrid Signatures (Ed25519 + ML-DSA-65) + Out-of-band verification.
+- **Replay**: Mitigated by sequence numbers + AEAD (ChaCha20-Poly1305).
+- **DoS**: Mitigated by libp2p connection limits; rate limiting TBD.
 - **Sybil**: (Future) Trust graphs or PoW.
+- **Stale mDNS Peers**: Mitigated — mDNS removed; discovery via Kademlia DHT only.
+- **QUIC Handshake Failure**: Mitigated — TCP + Noise + Yamux fallback transport.

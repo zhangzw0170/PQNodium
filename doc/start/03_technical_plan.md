@@ -170,7 +170,7 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 ### 选定: Tauri v2
 
 ```
-架构: pqnodium-core (Rust lib) ──(Tauri IPC)──▶ React/TS 前端 (src-tauri/web/)
+架构: pqnodium-core (Rust lib) ──(Tauri IPC)──▶ React/TS 前端 (待搭建)
                                               Tailwind CSS + shadcn/ui
 ```
 
@@ -215,15 +215,15 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 | **Phase 0** | 项目骨架 | Cargo workspace, CI (`x86_64-pc-windows-msvc` + `x86_64-unknown-linux-gnu`), 基本目录结构 | ✅ Done |
 | **Phase 1** | 核心层 | 身份系统 (Ed25519+ML-DSA)、加密 (X25519+ML-KEM)、消息协议 | ✅ Done |
 | **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 | ✅ Done |
-| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ⏳ Current |
-| **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC 通道、前端脚手架 | ⏳ Pending |
+| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ✅ Done |
+| **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC stub | ✅ Done (前端未搭建) |
 
 **✅ 首个里程碑交付**:
-- [ ] Windows 节点 ↔ Linux 节点 直连成功
-- [ ] PQC Hybrid 握手完成 (X25519 + ML-KEM-768)
-- [ ] 加密消息互发 (ChaCha20-Poly1305)
+- [x] PQC Hybrid 握手完成 (X25519 + ML-KEM-768)
+- [x] 加密消息互发 (ChaCha20-Poly1305)
+- [ ] Windows 节点 ↔ Linux 节点 直连成功（待跨平台测试）
 - [ ] 文件互传
-- [ ] Kademlia DHT 发现彼此
+- [ ] Kademlia DHT 发现彼此（待跨节点测试）
 
 ### Phase 4+: 后续扩展
 
