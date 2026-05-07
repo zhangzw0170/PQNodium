@@ -9,7 +9,7 @@ pub type MlKem768DecKey = DecapsulationKey<ml_kem::MlKem768Params>;
 
 #[derive(Clone)]
 pub struct MlKem768PublicKey {
-    encoded: Vec<u8>,
+    pub encoded: Vec<u8>,
 }
 
 impl AsRef<[u8]> for MlKem768PublicKey {

@@ -123,7 +123,7 @@ mod tests {
         let (pk, sk) = X25519MlKem768::keygen(&mut OsRng);
         let (ct, ss_sender) = X25519MlKem768::encapsulate(&pk, &mut OsRng).unwrap();
         let ss_receiver = X25519MlKem768::decapsulate(&sk, &ct).unwrap();
-        assert_eq!(ss_sender.as_bytes(), ss_receiver.as_bytes());
+        assert!(ss_sender.ct_eq(&ss_receiver));
     }
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
         let (ct, ss) = X25519MlKem768::encapsulate(&pk, &mut OsRng).unwrap();
         let ss2 = X25519MlKem768::decapsulate(&sk, &ct).unwrap();
         assert_eq!(ss.as_bytes().len(), 32);
-        assert_eq!(ss2.as_bytes().len(), 32);
+        assert!(ss.ct_eq(&ss2));
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod tests {
 
         let dec1 = X25519MlKem768::decapsulate(&sk, &ct1).unwrap();
         let dec2 = X25519MlKem768::decapsulate(&sk, &ct2).unwrap();
-        assert_eq!(ss1.as_bytes(), dec1.as_bytes());
-        assert_eq!(ss2.as_bytes(), dec2.as_bytes());
+        assert!(ss1.ct_eq(&dec1));
+        assert!(ss2.ct_eq(&dec2));
     }
 }

@@ -4,7 +4,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Clone)]
-pub struct X25519PublicKey([u8; 32]);
+pub struct X25519PublicKey(pub [u8; 32]);
 
 impl AsRef<[u8]> for X25519PublicKey {
     fn as_ref(&self) -> &[u8] {

@@ -8,6 +8,7 @@ thiserror = "2"
 rand = "0.8"
 rand_core = "0.6"
 sha2 = "0.10"
+subtle = "2"
 zeroize = { version = "1", features = ["derive"] }
 ml-kem = "0.2"
 x25519-dalek = { version = "2", features = ["static_secrets"] }

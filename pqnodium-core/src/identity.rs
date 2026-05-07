@@ -5,15 +5,21 @@ use crate::crypto::traits::sign::Signer;
 use rand_core::CryptoRngCore;
 use sha2::{Digest, Sha256};
 
-/// A unique peer identifier derived from the hash of the Ed25519 public key.
+/// A unique peer identifier derived from the hash of both Ed25519 and ML-DSA-65 public keys.
+///
+/// This binds the classical and PQ identity together: changing either key pair
+/// produces a different PeerId, preventing identity substitution attacks.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PeerId([u8; 32]);
 
 impl PeerId {
-    /// Derive a PeerId from an Ed25519 public key.
-    pub fn from_ed25519_pk(pk: &Ed25519PublicKey) -> Self {
-        let hash = Sha256::digest(pk.as_ref());
-        Self(hash.into())
+    /// Derive a PeerId from Ed25519 + ML-DSA-65 public keys.
+    pub fn from_hybrid_pk(ed_pk: &Ed25519PublicKey, ml_pk: &MlDsa65PublicKey) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(b"pqnodium-peerid-v1");
+        hasher.update(ed_pk.as_ref());
+        hasher.update(ml_pk.as_ref());
+        Self(hasher.finalize().into())
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -50,7 +56,7 @@ impl Identity {
     pub fn generate<R: CryptoRngCore>(rng: &mut R) -> Self {
         let (ed25519_pk, ed25519_sk) = Ed25519Signer::keygen(rng);
         let (mldsa65_pk, mldsa65_sk) = MlDsa65Signer::keygen(rng);
-        let peer_id = PeerId::from_ed25519_pk(&ed25519_pk);
+        let peer_id = PeerId::from_hybrid_pk(&ed25519_pk, &mldsa65_pk);
         Self {
             ed25519_pk,
             ed25519_sk,
@@ -67,7 +73,7 @@ impl Identity {
         mldsa65_pk: MlDsa65PublicKey,
         mldsa65_sk: MlDsa65SecretKey,
     ) -> Self {
-        let peer_id = PeerId::from_ed25519_pk(&ed25519_pk);
+        let peer_id = PeerId::from_hybrid_pk(&ed25519_pk, &mldsa65_pk);
         Self {
             ed25519_pk,
             ed25519_sk,
@@ -146,7 +152,7 @@ impl PublicIdentity {
 
     /// Reconstruct from individual public keys.
     pub fn from_parts(ed25519_pk: Ed25519PublicKey, mldsa65_pk: MlDsa65PublicKey) -> Self {
-        let peer_id = PeerId::from_ed25519_pk(&ed25519_pk);
+        let peer_id = PeerId::from_hybrid_pk(&ed25519_pk, &mldsa65_pk);
         Self {
             peer_id,
             ed25519_pk,
@@ -169,8 +175,9 @@ mod tests {
     #[test]
     fn peer_id_deterministic() {
         let identity = Identity::generate(&mut OsRng);
-        let pk = identity.ed25519_public_key();
-        let peer_id2 = PeerId::from_ed25519_pk(pk);
+        let ed_pk = identity.ed25519_public_key();
+        let ml_pk = identity.mldsa65_public_key();
+        let peer_id2 = PeerId::from_hybrid_pk(ed_pk, ml_pk);
         assert_eq!(identity.peer_id(), &peer_id2);
     }
 

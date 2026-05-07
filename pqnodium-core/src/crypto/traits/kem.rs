@@ -1,5 +1,6 @@
 use rand::rngs::OsRng;
 use rand_core::CryptoRngCore;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A shared secret produced by a KEM operation.
@@ -13,6 +14,11 @@ impl SharedSecret {
 
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    /// Constant-time equality comparison to prevent timing side-channels.
+    pub fn ct_eq(&self, other: &SharedSecret) -> bool {
+        self.0.ct_eq(&other.0).into()
     }
 }
 
