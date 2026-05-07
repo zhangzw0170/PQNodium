@@ -7,6 +7,19 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Clone)]
 pub struct MlDsa65PublicKey(Vec<u8>);
 
+impl MlDsa65PublicKey {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
+        if bytes.is_empty() {
+            return None;
+        }
+        Some(Self(bytes.to_vec()))
+    }
+}
+
 impl AsRef<[u8]> for MlDsa65PublicKey {
     fn as_ref(&self) -> &[u8] {
         &self.0
@@ -15,6 +28,25 @@ impl AsRef<[u8]> for MlDsa65PublicKey {
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct MlDsa65SecretKey(Vec<u8>);
+
+impl MlDsa65SecretKey {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
+        if bytes.is_empty() {
+            return None;
+        }
+        Some(Self(bytes.to_vec()))
+    }
+}
+
+impl AsRef<[u8]> for MlDsa65SecretKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 #[derive(Clone)]
 pub struct MlDsa65Signature(Vec<u8>);

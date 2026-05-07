@@ -60,6 +60,23 @@ impl Identity {
         }
     }
 
+    /// Reconstruct an identity from existing key material.
+    pub fn from_keys(
+        ed25519_pk: Ed25519PublicKey,
+        ed25519_sk: Ed25519SecretKey,
+        mldsa65_pk: MlDsa65PublicKey,
+        mldsa65_sk: MlDsa65SecretKey,
+    ) -> Self {
+        let peer_id = PeerId::from_ed25519_pk(&ed25519_pk);
+        Self {
+            ed25519_pk,
+            ed25519_sk,
+            mldsa65_pk,
+            mldsa65_sk,
+            peer_id,
+        }
+    }
+
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
@@ -70,6 +87,14 @@ impl Identity {
 
     pub fn mldsa65_public_key(&self) -> &MlDsa65PublicKey {
         &self.mldsa65_pk
+    }
+
+    pub fn ed25519_secret_key(&self) -> &Ed25519SecretKey {
+        &self.ed25519_sk
+    }
+
+    pub fn mldsa65_secret_key(&self) -> &MlDsa65SecretKey {
+        &self.mldsa65_sk
     }
 
     /// Hybrid sign a message (both Ed25519 and ML-DSA-65).

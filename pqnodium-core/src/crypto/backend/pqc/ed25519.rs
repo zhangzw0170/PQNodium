@@ -8,6 +8,17 @@ pub struct Ed25519PublicKey {
     bytes: [u8; 32],
 }
 
+impl Ed25519PublicKey {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
+        let b = bytes.try_into().ok()?;
+        Some(Self { bytes: b })
+    }
+}
+
 impl AsRef<[u8]> for Ed25519PublicKey {
     fn as_ref(&self) -> &[u8] {
         &self.bytes
@@ -17,6 +28,23 @@ impl AsRef<[u8]> for Ed25519PublicKey {
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Ed25519SecretKey {
     bytes: [u8; 32],
+}
+
+impl Ed25519SecretKey {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
+        let b = bytes.try_into().ok()?;
+        Some(Self { bytes: b })
+    }
+}
+
+impl AsRef<[u8]> for Ed25519SecretKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
 }
 
 #[derive(Clone)]
