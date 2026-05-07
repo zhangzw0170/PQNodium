@@ -4,4 +4,5 @@ members = [
     "pqnodium-core",
     "pqnodium-p2p",
     "pqnodium-cli",
+    "src-tauri",
 ]

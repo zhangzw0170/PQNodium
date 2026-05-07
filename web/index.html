@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PQNodium</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background: #12121a;
+            border-bottom: 1px solid #1e1e2e;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #7c6ff7;
+        }
+        header .version {
+            font-size: 12px;
+            color: #666;
+        }
+        main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .placeholder {
+            text-align: center;
+            color: #555;
+        }
+        .placeholder p { margin-top: 8px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>PQNodium</h1>
+        <span class="version" id="version">v0.1.0</span>
+    </header>
+    <main>
+        <div class="placeholder">
+            <h2>Post-Quantum Messaging</h2>
+            <p>Frontend scaffold — React + TypeScript coming in Phase 6</p>
+        </div>
+    </main>
+    <script>
+        if (window.__TAURI__) {
+            window.__TAURI__.invoke('get_version').then(v => {
+                document.getElementById('version').textContent = 'v' + v;
+            });
+        }
+    </script>
+</body>
+</html>
