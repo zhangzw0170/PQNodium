@@ -9,6 +9,8 @@ pub struct PqNodeConfig {
     pub agent_version: String,
     pub kad_query_timeout: Duration,
     pub max_message_size: usize,
+    /// Maximum number of concurrent incoming connections.
+    pub max_incoming_connections: u32,
 }
 
 impl Default for PqNodeConfig {
@@ -21,6 +23,7 @@ impl Default for PqNodeConfig {
             agent_version: format!("pqnodium/{}", env!("CARGO_PKG_VERSION")),
             kad_query_timeout: Duration::from_secs(60),
             max_message_size: 4 * 1024 * 1024, // 4 MiB
+            max_incoming_connections: 128,
         }
     }
 }
@@ -55,6 +58,11 @@ impl PqNodeConfig {
         if self.max_message_size > 64 * 1024 * 1024 {
             return Err(crate::error::PqP2pError::MessageTooLarge(
                 self.max_message_size,
+            ));
+        }
+        if self.max_incoming_connections == 0 {
+            return Err(crate::error::PqP2pError::transport(
+                "max_incoming_connections must be > 0",
             ));
         }
         Ok(())
@@ -115,6 +123,15 @@ mod tests {
     fn validate_oversized() {
         let config = PqNodeConfig {
             max_message_size: 65 * 1024 * 1024,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_zero_max_connections() {
+        let config = PqNodeConfig {
+            max_incoming_connections: 0,
             ..Default::default()
         };
         assert!(config.validate().is_err());

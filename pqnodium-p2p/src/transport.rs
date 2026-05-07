@@ -16,9 +16,12 @@ pub fn create_transport(
     let quic_transport = quic::tokio::Transport::new(quic::Config::new(id_keys))
         .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)));
 
+    let noise_config = noise::Config::new(id_keys)
+        .map_err(|e| crate::error::PqP2pError::transport(format!("noise init failed: {e}")))?;
+
     let tcp_transport = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true))
         .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(noise::Config::new(id_keys).unwrap())
+        .authenticate(noise_config)
         .multiplex(libp2p::yamux::Config::default())
         .timeout(Duration::from_secs(10))
         .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)));

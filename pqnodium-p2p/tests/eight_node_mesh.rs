@@ -16,7 +16,6 @@ use pqnodium_p2p::event::PqEvent;
 use pqnodium_p2p::node::PqNode;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
 
 const NODE_COUNT: usize = 8;
@@ -140,7 +139,7 @@ async fn all_nodes_report_listening() {
 #[tokio::test]
 async fn two_nodes_connect() {
     let mut a = SpawnedNode::spawn().await;
-    let mut b = SpawnedNode::spawn().await;
+    let b = SpawnedNode::spawn().await;
 
     let b_pid = b.peer_id_str();
     let a_pid = a.peer_id_str();
@@ -288,7 +287,7 @@ async fn sequential_chain() {
 #[tokio::test]
 async fn node_isolation() {
     let mut a = SpawnedNode::spawn().await;
-    let mut b = SpawnedNode::spawn().await;
+    let b = SpawnedNode::spawn().await;
     let c = SpawnedNode::spawn().await;
 
     let c_pid = c.peer_id_str();

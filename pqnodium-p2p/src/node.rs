@@ -38,7 +38,8 @@ impl PqNode {
             transport,
             behaviour,
             peer_id,
-            libp2p::swarm::Config::with_tokio_executor(),
+            libp2p::swarm::Config::with_tokio_executor()
+                .with_max_negotiating_inbound_streams(config.max_incoming_connections as usize),
         );
 
         Ok(Self {
