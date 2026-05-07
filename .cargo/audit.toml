@@ -1,0 +1,4 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0002", # lru 0.12.5 IterMut Stacked Borrows violation — transitive via libp2p-swarm, no fix available upstream
+]
