@@ -1,10 +1,16 @@
+use crate::crypto::backend::pqc::ml_kem::MlKem768Kem;
 use crate::crypto::backend::pqc::x25519::X25519Kem;
+use crate::crypto::hybrid::hybrid_kem::{HybridKem, HybridKemPublicKey};
 use crate::crypto::traits::aead::AeadCipher;
 use crate::crypto::traits::kem::{KemError, KeyEncapsulation, SharedSecret};
 use crate::identity::PublicIdentity;
 use rand_core::CryptoRngCore;
 
-/// Session state for the Noise PQ Hybrid handshake.
+type PqHybridKem = HybridKem<X25519Kem, MlKem768Kem>;
+type PqHybridKemPk = HybridKemPublicKey<X25519Kem, MlKem768Kem>;
+type PqHybridKemSk = <PqHybridKem as KeyEncapsulation>::SecretKey;
+
+/// Session state for the PQ Hybrid handshake.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandshakeState {
     Idle,
@@ -26,6 +32,8 @@ pub enum HandshakeError {
     Kem(#[from] KemError),
     #[error("handshake not completed")]
     NotCompleted,
+    #[error("invalid handshake payload")]
+    InvalidPayload,
 }
 
 /// Session keys derived from the handshake.
@@ -84,9 +92,25 @@ impl SessionKeys {
 }
 
 /// The handshake session managing state transitions.
+///
+/// Uses HybridKem (X25519 + ML-KEM-768) for post-quantum secure key exchange.
+///
+/// Protocol (2-round):
+/// ```text
+/// Round 1 (Initiator → Responder):
+///   [x25519_pk: 32][ml_kem_pk: 1184]
+///
+/// Round 2 (Responder → Initiator):
+///   [x25519_pk: 32][ml_kem_pk: 1184][hybrid_ct: 1122]
+///   where hybrid_ct = HybridKem::encapsulate(initiator_pk)
+///
+/// After Round 2, both sides derive the same shared secret via
+/// KDF(X25519_ss || ML-KEM-768_ss).
+/// ```
 pub struct HandshakeSession {
     state: HandshakeState,
-    local_sk: Option<Vec<u8>>,
+    /// Initiator's ephemeral secret key (for decapsulating responder's ct).
+    initiator_sk: Option<PqHybridKemSk>,
     remote_identity: Option<PublicIdentity>,
     session_keys: Option<SessionKeys>,
 }
@@ -95,7 +119,7 @@ impl HandshakeSession {
     pub fn new() -> Self {
         Self {
             state: HandshakeState::Idle,
-            local_sk: None,
+            initiator_sk: None,
             remote_identity: None,
             session_keys: None,
         }
@@ -111,7 +135,9 @@ impl HandshakeSession {
             .ok_or(HandshakeError::NotCompleted)
     }
 
-    /// Initiate: generate ephemeral keypair, return public key.
+    /// Initiate: generate ephemeral hybrid keypair, send public keys to responder.
+    ///
+    /// Returns: `[x25519_pk: 32][ml_kem_pk: 1184]` (1216 bytes)
     pub fn initiate<R: CryptoRngCore>(
         &mut self,
         rng: &mut R,
@@ -120,69 +146,92 @@ impl HandshakeSession {
         self.require_state(&HandshakeState::Idle)?;
         self.remote_identity = Some(remote_identity);
 
-        let (_pk, sk) = X25519Kem::keygen(rng);
-        self.local_sk = Some(sk.0.to_vec());
-
+        let (_pk, sk) = PqHybridKem::keygen(rng);
+        self.initiator_sk = Some(sk);
         self.state = HandshakeState::Initiated;
-        Ok(_pk.as_ref().to_vec())
+
+        // Encode: x25519_pk(32) || ml_kem_pk(1184)
+        let mut payload = Vec::with_capacity(32 + 1184);
+        payload.extend_from_slice(_pk.classic.as_ref());
+        payload.extend_from_slice(_pk.pqc.as_ref());
+        Ok(payload)
     }
 
-    /// Respond: generate own keypair, derive shared secret from initiator's public key.
-    /// Returns our public key.
+    /// Respond: receive initiator's PK, generate own keypair, encapsulate to initiator's PK.
+    ///
+    /// Input: initiator's PK `[x25519_pk: 32][ml_kem_pk: 1184]`
+    /// Returns: `[x25519_pk: 32][ml_kem_pk: 1184][hybrid_ct: 1122]`
     pub fn respond<R: CryptoRngCore>(
         &mut self,
         rng: &mut R,
-        initiator_pk: &[u8],
+        initiator_pk_payload: &[u8],
         remote_identity: PublicIdentity,
     ) -> Result<Vec<u8>, HandshakeError> {
         self.require_state(&HandshakeState::Idle)?;
         self.remote_identity = Some(remote_identity);
 
-        let (pk, sk) = X25519Kem::keygen(rng);
-        let sk_arr: [u8; 32] = sk.0;
-        let ss = X25519Kem::decapsulate(
-            &crate::crypto::backend::pqc::x25519::X25519SecretKey(sk_arr),
-            initiator_pk,
-        )?;
+        if initiator_pk_payload.len() < 32 + 1184 {
+            return Err(HandshakeError::InvalidPayload);
+        }
 
-        self.local_sk = None; // responder doesn't need local_sk after deriving
+        // Reconstruct initiator's hybrid PK
+        let initiator_pk = build_hybrid_pk(&initiator_pk_payload[..32 + 1184])?;
+
+        // Generate responder's ephemeral keypair
+        let (resp_pk, _resp_sk) = PqHybridKem::keygen(rng);
+
+        // Encapsulate to initiator's PK → both sides will derive the same ss
+        let (hybrid_ct, shared_secret) = PqHybridKem::encapsulate(&initiator_pk, rng)?;
+
         self.session_keys = Some(SessionKeys {
-            send_key: ss.clone(),
-            recv_key: ss,
+            send_key: shared_secret.clone(),
+            recv_key: shared_secret,
             send_nonce: 0,
             recv_nonce: 0,
         });
-
         self.state = HandshakeState::Completed;
-        Ok(pk.as_ref().to_vec())
+
+        // Encode: resp_pk(32+1184) || hybrid_ct(1122)
+        let mut payload = Vec::with_capacity(32 + 1184 + hybrid_ct.len());
+        payload.extend_from_slice(resp_pk.classic.as_ref());
+        payload.extend_from_slice(resp_pk.pqc.as_ref());
+        payload.extend_from_slice(&hybrid_ct);
+        Ok(payload)
     }
 
-    /// Complete as initiator: derive shared secret from responder's public key.
-    pub fn complete_as_initiator(&mut self, responder_pk: &[u8]) -> Result<(), HandshakeError> {
+    /// Complete as initiator: decapsulate responder's ciphertext.
+    ///
+    /// Input: `[x25519_pk: 32][ml_kem_pk: 1184][hybrid_ct: 1122]`
+    pub fn complete_as_initiator(&mut self, responder_payload: &[u8]) -> Result<(), HandshakeError> {
         self.require_state(&HandshakeState::Initiated)?;
 
-        let sk_bytes = self.local_sk.take().ok_or(HandshakeError::NotCompleted)?;
-        let sk_arr: [u8; 32] = sk_bytes
-            .try_into()
-            .map_err(|_| KemError::DecapsulationFailed)?;
-        let sk = crate::crypto::backend::pqc::x25519::X25519SecretKey(sk_arr);
-        let ss = X25519Kem::decapsulate(&sk, responder_pk)?;
+        // Minimum: hybrid_ct header (2 bytes) but we need the full 1122-byte ct
+        let pk_len = 32 + 1184;
+        let ct_offset = pk_len;
+        if responder_payload.len() < ct_offset + 2 {
+            return Err(HandshakeError::InvalidPayload);
+        }
 
-        // TODO: Phase 2 — use HybridKem for full PQC key exchange.
+        let hybrid_ct = &responder_payload[ct_offset..];
+
+        let sk = self.initiator_sk.take().ok_or(HandshakeError::NotCompleted)?;
+        let shared_secret = PqHybridKem::decapsulate(&sk, hybrid_ct)?;
 
         self.session_keys = Some(SessionKeys {
-            send_key: ss.clone(),
-            recv_key: ss,
+            send_key: shared_secret.clone(),
+            recv_key: shared_secret,
             send_nonce: 0,
             recv_nonce: 0,
         });
         self.state = HandshakeState::Completed;
+
+        drop(sk);
         Ok(())
     }
 
     pub fn close(&mut self) {
         self.state = HandshakeState::Closed;
-        self.local_sk = None;
+        self.initiator_sk = None;
         self.session_keys = None;
     }
 
@@ -197,6 +246,24 @@ impl HandshakeSession {
     }
 }
 
+/// Build a HybridKem public key from raw bytes: `[x25519_pk: 32][ml_kem_pk: 1184]`.
+fn build_hybrid_pk(
+    data: &[u8],
+) -> Result<PqHybridKemPk, HandshakeError> {
+    if data.len() < 32 + 1184 {
+        return Err(HandshakeError::InvalidPayload);
+    }
+    let x25519_bytes: [u8; 32] = data[..32]
+        .try_into()
+        .map_err(|_| HandshakeError::InvalidPayload)?;
+    Ok(crate::crypto::hybrid::hybrid_kem::HybridKemPublicKey {
+        classic: crate::crypto::backend::pqc::x25519::X25519PublicKey(x25519_bytes),
+        pqc: crate::crypto::backend::pqc::ml_kem::MlKem768PublicKey {
+            encoded: data[32..32 + 1184].to_vec(),
+        },
+    })
+}
+
 impl Default for HandshakeSession {
     fn default() -> Self {
         Self::new()
@@ -209,7 +276,6 @@ mod tests {
     use crate::identity::Identity;
     use rand::rngs::OsRng;
 
-    /// Test-only helper to access mutable session keys.
     impl HandshakeSession {
         fn session_keys_mut(&mut self) -> &mut SessionKeys {
             self.session_keys.as_mut().unwrap()
@@ -221,8 +287,8 @@ mod tests {
         let mut session = HandshakeSession::new();
         assert_eq!(session.state(), &HandshakeState::Idle);
 
-        let identity = Identity::generate(&mut OsRng);
-        let _ = session.initiate(&mut OsRng, identity.public()).unwrap();
+        let id_b = Identity::generate(&mut OsRng);
+        let _ = session.initiate(&mut OsRng, id_b.public()).unwrap();
         assert_eq!(session.state(), &HandshakeState::Initiated);
 
         session.close();
@@ -232,7 +298,7 @@ mod tests {
     #[test]
     fn invalid_transition() {
         let mut session = HandshakeSession::new();
-        assert!(session.complete_as_initiator(&[0u8; 32]).is_err());
+        assert!(session.complete_as_initiator(&[0u8; 10]).is_err());
     }
 
     #[test]
@@ -255,34 +321,33 @@ mod tests {
     }
 
     #[test]
-    fn full_handshake() {
+    fn full_hybrid_handshake() {
         let mut initiator = HandshakeSession::new();
         let mut responder = HandshakeSession::new();
 
         let id_a = Identity::generate(&mut OsRng);
         let id_b = Identity::generate(&mut OsRng);
 
-        // Initiator sends their ephemeral PK
+        // Round 1: initiator sends ephemeral PK
         let initiator_pk = initiator.initiate(&mut OsRng, id_b.public()).unwrap();
-        assert_eq!(initiator_pk.len(), 32);
+        assert_eq!(initiator_pk.len(), 32 + 1184);
 
-        // Responder derives shared secret immediately
-        let responder_pk = responder
+        // Round 2: responder sends their PK + hybrid ciphertext
+        let responder_msg = responder
             .respond(&mut OsRng, &initiator_pk, id_a.public())
             .unwrap();
         assert_eq!(responder.state(), &HandshakeState::Completed);
 
-        // Initiator completes with responder's PK
-        initiator.complete_as_initiator(&responder_pk).unwrap();
+        // Initiator completes by decapsulating
+        initiator.complete_as_initiator(&responder_msg).unwrap();
         assert_eq!(initiator.state(), &HandshakeState::Completed);
 
-        // Both should have session keys
         assert!(initiator.session_keys().is_ok());
         assert!(responder.session_keys().is_ok());
     }
 
     #[test]
-    fn symmetric_encryption_after_handshake() {
+    fn symmetric_encryption_after_hybrid_handshake() {
         let mut initiator = HandshakeSession::new();
         let mut responder = HandshakeSession::new();
 
@@ -290,20 +355,86 @@ mod tests {
         let id_b = Identity::generate(&mut OsRng);
 
         let initiator_pk = initiator.initiate(&mut OsRng, id_b.public()).unwrap();
-        let responder_pk = responder
+        let responder_msg = responder
             .respond(&mut OsRng, &initiator_pk, id_a.public())
             .unwrap();
-        initiator.complete_as_initiator(&responder_pk).unwrap();
+        initiator.complete_as_initiator(&responder_msg).unwrap();
 
         let aad = b"test_context";
-        let plaintext = b"secret message";
+        let plaintext = b"secret post-quantum message";
 
-        // Initiator encrypts, responder decrypts
         let ct = initiator
             .session_keys_mut()
             .encrypt(aad, plaintext)
             .unwrap();
         let pt = responder.session_keys_mut().decrypt(aad, &ct).unwrap();
         assert_eq!(pt, plaintext);
+    }
+
+    #[test]
+    fn handshake_produces_32_byte_session_key() {
+        let mut initiator = HandshakeSession::new();
+        let mut responder = HandshakeSession::new();
+
+        let id_a = Identity::generate(&mut OsRng);
+        let id_b = Identity::generate(&mut OsRng);
+
+        let initiator_pk = initiator.initiate(&mut OsRng, id_b.public()).unwrap();
+        let responder_msg = responder
+            .respond(&mut OsRng, &initiator_pk, id_a.public())
+            .unwrap();
+        initiator.complete_as_initiator(&responder_msg).unwrap();
+
+        let ik = initiator.session_keys().unwrap();
+        let rk = responder.session_keys().unwrap();
+        assert_eq!(ik.send_key.as_bytes().len(), 32);
+        assert_eq!(rk.recv_key.as_bytes().len(), 32);
+        // Both sides must derive the SAME shared secret
+        assert_eq!(ik.send_key.as_bytes(), rk.send_key.as_bytes());
+    }
+
+    #[test]
+    fn different_sessions_produce_different_keys() {
+        let id_a = Identity::generate(&mut OsRng);
+        let id_b = Identity::generate(&mut OsRng);
+
+        let mut init1 = HandshakeSession::new();
+        let mut resp1 = HandshakeSession::new();
+        let pk1 = init1.initiate(&mut OsRng, id_b.public()).unwrap();
+        let reply1 = resp1.respond(&mut OsRng, &pk1, id_a.public()).unwrap();
+        init1.complete_as_initiator(&reply1).unwrap();
+
+        let mut init2 = HandshakeSession::new();
+        let mut resp2 = HandshakeSession::new();
+        let pk2 = init2.initiate(&mut OsRng, id_b.public()).unwrap();
+        let reply2 = resp2.respond(&mut OsRng, &pk2, id_a.public()).unwrap();
+        init2.complete_as_initiator(&reply2).unwrap();
+
+        let k1 = init1.session_keys().unwrap().send_key.as_bytes().to_vec();
+        let k2 = init2.session_keys().unwrap().send_key.as_bytes().to_vec();
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn respond_with_short_payload_fails() {
+        let mut responder = HandshakeSession::new();
+        let id = Identity::generate(&mut OsRng);
+        let result = responder.respond(&mut OsRng, &[0u8; 10], id.public());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn complete_with_short_payload_fails() {
+        let mut initiator = HandshakeSession::new();
+        let id = Identity::generate(&mut OsRng);
+        initiator.initiate(&mut OsRng, id.public()).unwrap();
+        let result = initiator.complete_as_initiator(&[0u8; 10]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_hybrid_pk_invalid_length() {
+        let result = build_hybrid_pk(&[0u8; 10]);
+        assert!(result.is_err());
     }
 }
