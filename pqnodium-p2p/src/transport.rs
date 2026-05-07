@@ -1,17 +1,33 @@
+use futures::future::Either;
 use libp2p::core::muxing::StreamMuxerBox;
-use libp2p::core::transport::Boxed;
+use libp2p::core::transport::{Boxed, OrTransport};
 use libp2p::identity::Keypair;
-use libp2p::{quic, Transport};
+use libp2p::{noise, quic, tcp, Transport};
+use std::time::Duration;
 
-/// Build a QUIC transport for the given identity keypair.
+/// Build a combined QUIC + TCP transport for the given identity keypair.
 ///
-/// QUIC has TLS 1.3 encryption and stream multiplexing built in,
-/// so no additional Noise or yamux upgrade is needed.
+/// QUIC has TLS 1.3 encryption and stream multiplexing built in.
+/// TCP falls back to Noise + Yamux for environments where QUIC has issues
+/// (e.g. some Windows network configurations).
 pub fn create_transport(
     id_keys: &Keypair,
 ) -> Result<Boxed<(libp2p::PeerId, StreamMuxerBox)>, crate::error::PqP2pError> {
-    let transport = quic::tokio::Transport::new(quic::Config::new(id_keys))
-        .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)))
+    let quic_transport = quic::tokio::Transport::new(quic::Config::new(id_keys))
+        .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)));
+
+    let tcp_transport = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true))
+        .upgrade(libp2p::core::upgrade::Version::V1)
+        .authenticate(noise::Config::new(id_keys).unwrap())
+        .multiplex(libp2p::yamux::Config::default())
+        .timeout(Duration::from_secs(10))
+        .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)));
+
+    let transport = OrTransport::new(quic_transport, tcp_transport)
+        .map(|either_output, _| match either_output {
+            Either::Left((peer_id, muxer)) => (peer_id, muxer),
+            Either::Right((peer_id, muxer)) => (peer_id, muxer),
+        })
         .boxed();
 
     Ok(transport)

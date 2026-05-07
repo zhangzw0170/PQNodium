@@ -29,6 +29,7 @@ impl PqNode {
 
         let behaviour = PqBehaviour::new(
             peer_id,
+            &id_keys,
             config.agent_version.clone(),
             config.kad_query_timeout,
         );
@@ -52,9 +53,9 @@ impl PqNode {
     /// Start listening on the configured address.
     /// Returns the listener ID. The actual listening address will be
     /// reported via a `NewListenAddr` swarm event.
-    pub fn start_listening(&mut self) -> Result<(), PqP2pError> {
+    pub fn start_listening(&mut self, listen_addr: Multiaddr) -> Result<(), PqP2pError> {
         self.swarm
-            .listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse().unwrap())
+            .listen_on(listen_addr)
             .map_err(|e| PqP2pError::transport(e.to_string()))?;
         Ok(())
     }
@@ -167,19 +168,17 @@ impl PqNode {
                 })
             }
             SwarmEvent::Behaviour(behaviour_event) => self.handle_behaviour_event(behaviour_event),
-            _ => None,
+            other => {
+                tracing::debug!("swarm event (unmapped): {other:?}");
+                None
+            }
         }
     }
 
     fn handle_behaviour_event(&mut self, event: PqBehaviourEvent) -> Option<PqEvent> {
         match event {
-            // Kademlia events
             PqBehaviourEvent::Kademlia(kad_event) => self.handle_kad_event(kad_event),
-            // Identify events
             PqBehaviourEvent::Identify(id_event) => self.handle_identify_event(id_event),
-            // mDNS events
-            PqBehaviourEvent::Mdns(mdns_event) => self.handle_mdns_event(mdns_event),
-            // Ping events
             PqBehaviourEvent::Ping(ping_event) => {
                 if ping_event.result.is_err() {
                     tracing::warn!(
@@ -249,43 +248,6 @@ impl PqNode {
             _ => None,
         }
     }
-
-    fn handle_mdns_event(&mut self, event: libp2p::mdns::Event) -> Option<PqEvent> {
-        match event {
-            libp2p::mdns::Event::Discovered(list) => {
-                let mut first_event = None;
-                for (peer_id, addr) in list {
-                    let peer_str = peer_id.to_string();
-                    self.connected_peers
-                        .entry(peer_str.clone())
-                        .or_default()
-                        .push(addr.clone());
-                    self.swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, addr);
-
-                    if first_event.is_none() {
-                        first_event = Some(PqEvent::PeerDiscovered {
-                            peer_id: peer_str,
-                            addresses: self
-                                .connected_peers
-                                .get(&peer_id.to_string())
-                                .cloned()
-                                .unwrap_or_default(),
-                        });
-                    }
-                }
-                first_event
-            }
-            libp2p::mdns::Event::Expired(list) => {
-                for (peer_id, _) in list {
-                    self.connected_peers.remove(&peer_id.to_string());
-                }
-                None
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -306,7 +268,7 @@ mod tests {
         let config = PqNodeConfig::default();
         let mut node = PqNode::new(&config).unwrap();
 
-        let result = node.start_listening();
+        let result = node.start_listening(config.listen_addr);
         assert!(result.is_ok());
 
         // Poll a few times to get the NewListenAddr event
@@ -383,8 +345,9 @@ mod tests {
     #[tokio::test]
     async fn node_two_nodes_same_port_fails() {
         // Two nodes cannot bind to the same specific port
-        let mut node1 = PqNode::new(&PqNodeConfig::default()).unwrap();
-        node1.start_listening().unwrap();
+        let config = PqNodeConfig::default();
+        let mut node1 = PqNode::new(&config).unwrap();
+        node1.start_listening(config.listen_addr).unwrap();
 
         // Poll to get actual listen address
         let bound_addr = loop {

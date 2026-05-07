@@ -6,11 +6,16 @@ edition = "2021"
 [dependencies]
 pqnodium-core = { path = "../pqnodium-core" }
 libp2p = { version = "0.55", features = [
-    "quic", "noise", "yamux", "kad", "identify", "mdns", "ping",
+    "quic", "tcp", "noise", "yamux", "kad", "identify", "ping",
     "tokio", "ed25519", "serde", "macros",
 ] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 thiserror = "2"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
