@@ -3,6 +3,8 @@ use pqnodium_core::identity::Identity;
 use pqnodium_p2p::config::PqNodeConfig;
 use pqnodium_p2p::event::PqEvent;
 use pqnodium_p2p::node::PqNode;
+use hmac::Hmac;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::PathBuf;
 use tokio::io::AsyncBufReadExt;
@@ -94,7 +96,11 @@ fn cmd_generate(output: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Wire format: [ed_pk_len: u32][ed_pk][ed_sk_len: u32][ed_sk][ml_pk_len: u32][ml_pk][ml_sk_len: u32][ml_sk]
+// Wire format: [ed_pk_len: u32][ed_pk][ed_sk_len: u32][ed_sk][ml_pk_len: u32][ml_pk][ml_sk_len: u32][ml_sk][hmac: 32]
+// HMAC key = SHA-256(ed_sk || ml_sk), HMAC covers all preceding key data.
+const IDENTITY_HMAC_SIZE: usize = 32;
+const IDENTITY_MAGIC: &[u8] = b"pqnodium-identity-v1";
+
 fn save_identity(id: &Identity, path: &PathBuf) -> anyhow::Result<()> {
     let ed_pk = id.ed25519_public_key().as_ref();
     let ed_sk = id.ed25519_secret_key().as_ref();
@@ -102,6 +108,7 @@ fn save_identity(id: &Identity, path: &PathBuf) -> anyhow::Result<()> {
     let ml_sk = id.mldsa65_secret_key().as_ref();
 
     let mut data = Vec::new();
+    data.extend_from_slice(IDENTITY_MAGIC);
     data.extend_from_slice(&(ed_pk.len() as u32).to_le_bytes());
     data.extend_from_slice(ed_pk);
     data.extend_from_slice(&(ed_sk.len() as u32).to_le_bytes());
@@ -111,42 +118,130 @@ fn save_identity(id: &Identity, path: &PathBuf) -> anyhow::Result<()> {
     data.extend_from_slice(&(ml_sk.len() as u32).to_le_bytes());
     data.extend_from_slice(ml_sk);
 
+    // Derive HMAC key from secret keys
+    let hmac_key = derive_hmac_key(ed_sk, ml_sk);
+    let hmac = compute_hmac(&hmac_key, &data);
+    data.extend_from_slice(&hmac);
+
     std::fs::write(path, &data)?;
+    set_owner_only_permissions(path)?;
     Ok(())
+}
+
+/// Derive HMAC key from secret key material: SHA-256(ed_sk || ml_sk).
+fn derive_hmac_key(ed_sk: &[u8], ml_sk: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"pqnodium-hmac-key-v1");
+    hasher.update(ed_sk);
+    hasher.update(ml_sk);
+    hasher.finalize().into()
+}
+
+/// Compute HMAC-SHA256.
+fn compute_hmac(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
+    use hmac::Mac;
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(key).expect("HMAC key size is always valid");
+    mac.update(data);
+    mac.finalize().into_bytes().into()
+}
+
+/// Verify HMAC-SHA256.
+fn verify_hmac(key: &[u8; 32], data: &[u8], expected: &[u8; 32]) -> bool {
+    use subtle::ConstantTimeEq;
+    let actual = compute_hmac(key, data);
+    actual.ct_eq(expected).into()
+}
+
+/// Set file permissions to owner-read/write only (0600 equivalent).
+/// On Windows, this removes inherited ACLs and grants full control only to the current user.
+#[cfg(unix)]
+fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(windows)]
+fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
+    // On Windows, remove inheritance and set restrictive ACL via icacls
+    let path_str = path.to_string_lossy().replace('/', "\\");
+    std::process::Command::new("icacls")
+        .args([
+            &path_str,
+            "/inheritance:r",
+            "/grant:r",
+            &format!("{}:F", std::env::var("USERNAME").unwrap_or_default()),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn warn_if_permissions_too_open(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mode = meta.permissions().mode();
+        if mode & 0o077 != 0 {
+            tracing::warn!(
+                "Identity file has overly permissive permissions ({:o}). Fix with: chmod 600 {}",
+                mode & 0o777,
+                path.display()
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn warn_if_permissions_too_open(_path: &std::path::Path) {
+    // Windows ACL checks are complex; rely on the ACL set during save.
 }
 
 fn load_or_generate_identity(path: &PathBuf) -> anyhow::Result<Identity> {
     if path.exists() {
         info!("Loading identity from {}", path.display());
+        warn_if_permissions_too_open(path);
         let data = std::fs::read(path)?;
-        let mut pos = 0;
 
-        let read_len = |data: &[u8], pos: &mut usize| -> anyhow::Result<usize> {
-            if *pos + 4 > data.len() {
-                anyhow::bail!("unexpected end of identity file");
-            }
-            let len = u32::from_le_bytes(data[*pos..*pos + 4].try_into()?) as usize;
-            *pos += 4;
-            Ok(len)
-        };
+        if data.len() < IDENTITY_MAGIC.len() + IDENTITY_HMAC_SIZE {
+            anyhow::bail!("identity file too small");
+        }
+        if &data[..IDENTITY_MAGIC.len()] != IDENTITY_MAGIC {
+            anyhow::bail!("invalid identity file: bad magic bytes");
+        }
 
-        let read_bytes = |data: &[u8], pos: &mut usize, len: usize| -> anyhow::Result<Vec<u8>> {
-            if *pos + len > data.len() {
-                anyhow::bail!("unexpected end of identity file");
-            }
-            let bytes = data[*pos..*pos + len].to_vec();
-            *pos += len;
-            Ok(bytes)
-        };
+        let key_data = &data[..data.len() - IDENTITY_HMAC_SIZE];
+        let stored_hmac: [u8; IDENTITY_HMAC_SIZE] = data[data.len() - IDENTITY_HMAC_SIZE..]
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid HMAC"))?;
 
-        let ed_pk_len = read_len(&data, &mut pos)?;
-        let ed_pk_bytes = read_bytes(&data, &mut pos, ed_pk_len)?;
-        let ed_sk_len = read_len(&data, &mut pos)?;
-        let ed_sk_bytes = read_bytes(&data, &mut pos, ed_sk_len)?;
-        let ml_pk_len = read_len(&data, &mut pos)?;
-        let ml_pk_bytes = read_bytes(&data, &mut pos, ml_pk_len)?;
-        let ml_sk_len = read_len(&data, &mut pos)?;
-        let ml_sk_bytes = read_bytes(&data, &mut pos, ml_sk_len)?;
+        let mut pos = IDENTITY_MAGIC.len();
+
+        let ed_pk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
+        pos += 4;
+        let ed_pk_bytes = key_data[pos..pos + ed_pk_len].to_vec();
+        pos += ed_pk_len;
+
+        let ed_sk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
+        pos += 4;
+        let ed_sk_bytes = key_data[pos..pos + ed_sk_len].to_vec();
+        pos += ed_sk_len;
+
+        let ml_pk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
+        pos += 4;
+        let ml_pk_bytes = key_data[pos..pos + ml_pk_len].to_vec();
+        pos += ml_pk_len;
+
+        let ml_sk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
+        pos += 4;
+        let ml_sk_bytes = key_data[pos..pos + ml_sk_len].to_vec();
+
+        // Verify HMAC integrity before parsing keys
+        let hmac_key = derive_hmac_key(&ed_sk_bytes, &ml_sk_bytes);
+        if !verify_hmac(&hmac_key, key_data, &stored_hmac) {
+            anyhow::bail!("identity file integrity check failed (HMAC mismatch) — file may be corrupted or tampered with");
+        }
 
         use pqnodium_core::crypto::backend::pqc::ed25519::{Ed25519PublicKey, Ed25519SecretKey};
         use pqnodium_core::crypto::backend::pqc::ml_dsa::{MlDsa65PublicKey, MlDsa65SecretKey};
@@ -272,7 +367,7 @@ async fn run_interactive(mut node: PqNode) -> anyhow::Result<()> {
                     continue;
                 }
 
-                info!("Message (not yet encrypted): {trimmed}");
+                info!("Message sent ({} bytes)", trimmed.len());
                 writeln!(stdout, "[sent] {trimmed} ({} bytes)", trimmed.len())?;
             }
 
@@ -436,7 +531,9 @@ mod tests {
     #[test]
     fn load_corrupted_identity_fails() {
         let tmp = std::env::temp_dir().join("pqnodium_corrupted.bin");
-        let data = [255u8, 0, 0, 0, 0, 0, 0, 0];
+        // Valid magic but no real key data
+        let mut data = IDENTITY_MAGIC.to_vec();
+        data.extend_from_slice(&[0u8; 64]); // padding
         std::fs::write(&tmp, &data).unwrap();
 
         let result = load_or_generate_identity(&tmp);
@@ -446,7 +543,33 @@ mod tests {
     }
 
     #[test]
-    fn load_identity_with_extra_data_succeeds() {
+    fn load_tampered_identity_fails() {
+        let tmp = std::env::temp_dir().join("pqnodium_tampered.bin");
+        let _ = std::fs::remove_file(&tmp);
+
+        let mut rng = rand::rngs::OsRng;
+        let id = Identity::generate(&mut rng);
+        save_identity(&id, &tmp).unwrap();
+
+        // Tamper with a byte in the key data (before HMAC)
+        let mut data = std::fs::read(&tmp).unwrap();
+        let tamper_pos = IDENTITY_MAGIC.len() + 10;
+        if tamper_pos < data.len() - IDENTITY_HMAC_SIZE {
+            data[tamper_pos] ^= 0xFF;
+            std::fs::write(&tmp, &data).unwrap();
+
+            let result = load_or_generate_identity(&tmp);
+            match result {
+                Ok(_) => panic!("expected HMAC error but succeeded"),
+                Err(e) => assert!(e.to_string().contains("HMAC"), "error: {e}"),
+            }
+        }
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn load_identity_with_extra_data_fails() {
         let tmp = std::env::temp_dir().join("pqnodium_extra_data.bin");
         let _ = std::fs::remove_file(&tmp);
 
@@ -454,12 +577,13 @@ mod tests {
         let id = Identity::generate(&mut rng);
         save_identity(&id, &tmp).unwrap();
 
+        // Appending data shifts the HMAC boundary, causing verification failure
         let mut data = std::fs::read(&tmp).unwrap();
         data.extend_from_slice(b"extra trailing data");
         std::fs::write(&tmp, &data).unwrap();
 
         let result = load_or_generate_identity(&tmp);
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         let _ = std::fs::remove_file(&tmp);
     }
