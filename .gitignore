@@ -26,6 +26,7 @@ desktop.ini
 *.key
 *.pem
 *.p12
+identity.bin
 
 # Build artifacts
 *.exe
