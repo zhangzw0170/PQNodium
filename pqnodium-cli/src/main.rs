@@ -1,9 +1,9 @@
 use clap::Parser;
+use hmac::Hmac;
 use pqnodium_core::identity::Identity;
 use pqnodium_p2p::config::PqNodeConfig;
 use pqnodium_p2p::event::PqEvent;
 use pqnodium_p2p::node::PqNode;
-use hmac::Hmac;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::PathBuf;
@@ -140,8 +140,7 @@ fn derive_hmac_key(ed_sk: &[u8], ml_sk: &[u8]) -> [u8; 32] {
 /// Compute HMAC-SHA256.
 fn compute_hmac(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
     use hmac::Mac;
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(key).expect("HMAC key size is always valid");
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC key size is always valid");
     mac.update(data);
     mac.finalize().into_bytes().into()
 }

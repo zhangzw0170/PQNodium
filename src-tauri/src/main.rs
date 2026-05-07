@@ -47,6 +47,7 @@ fn check_rate_limit() -> Result<(), String> {
 }
 
 /// Validate that a string input is within acceptable length bounds.
+#[allow(dead_code)]
 fn validate_string_input(input: &str, max_len: usize, field_name: &str) -> Result<String, String> {
     if input.len() > max_len {
         return Err(format!("{field_name} exceeds maximum length ({max_len})"));
@@ -76,7 +77,11 @@ fn get_status() -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_peer_id, get_version, get_status])
+        .invoke_handler(tauri::generate_handler![
+            get_peer_id,
+            get_version,
+            get_status
+        ])
         .setup(|_app| {
             #[cfg(debug_assertions)]
             {

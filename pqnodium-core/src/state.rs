@@ -202,7 +202,10 @@ impl HandshakeSession {
     /// Complete as initiator: decapsulate responder's ciphertext.
     ///
     /// Input: `[x25519_pk: 32][ml_kem_pk: 1184][hybrid_ct: 1122]`
-    pub fn complete_as_initiator(&mut self, responder_payload: &[u8]) -> Result<(), HandshakeError> {
+    pub fn complete_as_initiator(
+        &mut self,
+        responder_payload: &[u8],
+    ) -> Result<(), HandshakeError> {
         self.require_state(&HandshakeState::Initiated)?;
 
         // Minimum: hybrid_ct header (2 bytes) but we need the full 1122-byte ct
@@ -214,7 +217,10 @@ impl HandshakeSession {
 
         let hybrid_ct = &responder_payload[ct_offset..];
 
-        let sk = self.initiator_sk.take().ok_or(HandshakeError::NotCompleted)?;
+        let sk = self
+            .initiator_sk
+            .take()
+            .ok_or(HandshakeError::NotCompleted)?;
         let shared_secret = PqHybridKem::decapsulate(&sk, hybrid_ct)?;
 
         self.session_keys = Some(SessionKeys {
@@ -247,9 +253,7 @@ impl HandshakeSession {
 }
 
 /// Build a HybridKem public key from raw bytes: `[x25519_pk: 32][ml_kem_pk: 1184]`.
-fn build_hybrid_pk(
-    data: &[u8],
-) -> Result<PqHybridKemPk, HandshakeError> {
+fn build_hybrid_pk(data: &[u8]) -> Result<PqHybridKemPk, HandshakeError> {
     if data.len() < 32 + 1184 {
         return Err(HandshakeError::InvalidPayload);
     }
