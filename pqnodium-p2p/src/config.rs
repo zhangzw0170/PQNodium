@@ -27,7 +27,7 @@ impl Default for PqNodeConfig {
             kad_query_timeout: Duration::from_secs(60),
             max_message_size: 4 * 1024 * 1024, // 4 MiB
             max_incoming_connections: 128,
-            idle_connection_timeout: Duration::from_secs(60),
+            idle_connection_timeout: Duration::from_secs(24 * 60 * 60), // 24h; QUIC keepalive (5s) keeps transport alive
         }
     }
 }
@@ -84,7 +84,7 @@ mod tests {
         assert!(config.agent_version.starts_with("pqnodium/"));
         assert_eq!(config.kad_query_timeout, Duration::from_secs(60));
         assert_eq!(config.max_message_size, 4 * 1024 * 1024);
-        assert_eq!(config.idle_connection_timeout, Duration::from_secs(60));
+        assert_eq!(config.idle_connection_timeout, Duration::from_secs(24 * 60 * 60));
     }
 
     #[test]
