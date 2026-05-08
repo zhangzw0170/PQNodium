@@ -11,6 +11,9 @@ pub struct PqNodeConfig {
     pub max_message_size: usize,
     /// Maximum number of concurrent incoming connections.
     pub max_incoming_connections: u32,
+    /// Duration after which an idle connection is closed.
+    /// Must be longer than the Ping interval (default 15s) to prevent premature disconnects.
+    pub idle_connection_timeout: Duration,
 }
 
 impl Default for PqNodeConfig {
@@ -24,6 +27,7 @@ impl Default for PqNodeConfig {
             kad_query_timeout: Duration::from_secs(60),
             max_message_size: 4 * 1024 * 1024, // 4 MiB
             max_incoming_connections: 128,
+            idle_connection_timeout: Duration::from_secs(60),
         }
     }
 }
@@ -80,6 +84,7 @@ mod tests {
         assert!(config.agent_version.starts_with("pqnodium/"));
         assert_eq!(config.kad_query_timeout, Duration::from_secs(60));
         assert_eq!(config.max_message_size, 4 * 1024 * 1024);
+        assert_eq!(config.idle_connection_timeout, Duration::from_secs(60));
     }
 
     #[test]

@@ -39,7 +39,8 @@ impl PqNode {
             behaviour,
             peer_id,
             libp2p::swarm::Config::with_tokio_executor()
-                .with_max_negotiating_inbound_streams(config.max_incoming_connections as usize),
+                .with_max_negotiating_inbound_streams(config.max_incoming_connections as usize)
+                .with_idle_connection_timeout(config.idle_connection_timeout),
         );
 
         Ok(Self {
