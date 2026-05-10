@@ -1,5 +1,6 @@
 use libp2p::autonat;
 use libp2p::dcutr;
+use libp2p::gossipsub::{self, MessageAuthenticity};
 use libp2p::identify::{Behaviour as Identify, Config as IdentifyConfig};
 use libp2p::identity::Keypair;
 use libp2p::kad::store::MemoryStore;
@@ -10,15 +11,19 @@ use libp2p::swarm::NetworkBehaviour;
 use libp2p::PeerId;
 use std::time::Duration;
 
+/// Default topic for PQNodium broadcast messages.
+pub const DEFAULT_TOPIC: &str = "pqnodium-v1";
+
 /// Combined NetworkBehaviour for PQNodium.
 ///
-/// Includes Kademlia DHT, Identify, Ping, Relay client/server, and Relay transport.
+/// Includes Kademlia DHT, Identify, Ping, Gossipsub, Relay client/server, and Relay transport.
 /// mDNS is intentionally excluded — it causes stale peer discovery on shared networks.
 #[derive(NetworkBehaviour)]
 pub struct PqBehaviour {
     pub kademlia: Kademlia<MemoryStore>,
     pub identify: Identify,
     pub ping: Ping,
+    pub gossipsub: gossipsub::Behaviour,
     pub relay_client: relay::client::Behaviour,
     pub relay_server: relay::Behaviour,
     pub autonat: autonat::Behaviour,
@@ -26,7 +31,7 @@ pub struct PqBehaviour {
 }
 
 impl PqBehaviour {
-    /// Create a new PqBehaviour with all NAT traversal protocols.
+    /// Create a new PqBehaviour with all NAT traversal protocols and gossipsub.
     pub fn new(
         peer_id: PeerId,
         id_keys: &Keypair,
@@ -46,6 +51,15 @@ impl PqBehaviour {
         let identify = Identify::new(IdentifyConfig::new(agent_version, id_keys.public()));
 
         let ping = Ping::new(libp2p::ping::Config::new());
+
+        let gossipsub = gossipsub::Behaviour::new(
+            MessageAuthenticity::Signed(id_keys.clone()),
+            gossipsub::ConfigBuilder::default()
+                .max_transmit_size(4 * 1024 * 1024)
+                .build()
+                .expect("valid gossipsub config"),
+        )
+        .expect("gossipsub init with valid keypair");
 
         let relay_server = if relay_server_enabled {
             relay::Behaviour::new(
@@ -79,6 +93,7 @@ impl PqBehaviour {
             kademlia,
             identify,
             ping,
+            gossipsub,
             relay_client,
             relay_server,
             autonat,
@@ -95,9 +110,8 @@ mod tests {
         let kp = Keypair::generate_ed25519();
         let peer_id = kp.public().to_peer_id();
 
-        // Create relay client transport pair for testing
         let (relay_transport, relay_client) = relay::client::new(peer_id);
-        drop(relay_transport); // not needed in test
+        drop(relay_transport);
 
         PqBehaviour::new(
             peer_id,

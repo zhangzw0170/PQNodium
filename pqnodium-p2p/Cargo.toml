@@ -8,7 +8,7 @@ pqnodium-core = { path = "../pqnodium-core" }
 libp2p = { version = "0.55", features = [
     "quic", "tcp", "noise", "yamux", "kad", "identify", "ping",
     "tokio", "ed25519", "serde", "macros",
-    "relay", "autonat", "dcutr",
+    "relay", "autonat", "dcutr", "gossipsub",
 ] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

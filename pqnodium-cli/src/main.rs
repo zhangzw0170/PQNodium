@@ -300,6 +300,9 @@ async fn cmd_start(
     node.start_listening(config.listen_addr.clone())?;
     info!("Listening on random QUIC port...");
 
+    node.subscribe_default()?;
+    info!("Subscribed to gossip topic: pqnodium-v1");
+
     if config.relay_server_enabled {
         info!("Relay server mode enabled");
     }

@@ -1,9 +1,10 @@
-use crate::behaviour::{PqBehaviour, PqBehaviourEvent};
+use crate::behaviour::{PqBehaviour, PqBehaviourEvent, DEFAULT_TOPIC};
 use crate::config::PqNodeConfig;
 use crate::error::PqP2pError;
 use crate::event::PqEvent;
 use crate::transport;
 use futures::StreamExt;
+use libp2p::gossipsub::{Event as GossipsubEvent, IdentTopic};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, SwarmBuilder};
 use std::collections::HashMap;
@@ -126,6 +127,28 @@ impl PqNode {
         Ok(())
     }
 
+    /// Subscribe to the default PQNodium gossip topic.
+    pub fn subscribe_default(&mut self) -> Result<(), PqP2pError> {
+        let topic = IdentTopic::new(DEFAULT_TOPIC);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&topic)
+            .map_err(|e| PqP2pError::transport(format!("gossipsub subscribe failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Publish a message to the default PQNodium gossip topic.
+    pub fn publish(&mut self, data: &[u8]) -> Result<(), PqP2pError> {
+        let topic = IdentTopic::new(DEFAULT_TOPIC);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic, data)
+            .map_err(|e| PqP2pError::transport(format!("gossipsub publish failed: {e}")))?;
+        Ok(())
+    }
+
     /// Create a relay reservation with the given relay server peer.
     /// After reservation, this node is reachable via the relay at:
     /// `/p2p/{relay_peer_id}/p2p-circuit/p2p/{our_peer_id}`
@@ -212,6 +235,17 @@ impl PqNode {
         match event {
             PqBehaviourEvent::Kademlia(kad_event) => self.handle_kad_event(kad_event),
             PqBehaviourEvent::Identify(id_event) => self.handle_identify_event(id_event),
+            PqBehaviourEvent::Gossipsub(gs_event) => match gs_event {
+                GossipsubEvent::Message {
+                    propagation_source: peer_id,
+                    message,
+                    ..
+                } => Some(PqEvent::MessageReceived {
+                    from: peer_id.to_string(),
+                    data: message.data,
+                }),
+                _ => None,
+            },
             PqBehaviourEvent::Ping(ping_event) => {
                 if ping_event.result.is_err() {
                     tracing::warn!(

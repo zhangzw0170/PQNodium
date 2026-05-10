@@ -191,6 +191,7 @@ enum NodeCommand {
     GetConnectedPeers(oneshot::Sender<Vec<String>>),
     Dial(String, oneshot::Sender<Result<(), String>>),
     ListenOnRelay(String, oneshot::Sender<Result<(), String>>),
+    Publish(String, oneshot::Sender<Result<(), String>>),
 }
 
 enum CommandResult {
@@ -199,6 +200,7 @@ enum CommandResult {
     ConnectedPeers(Vec<String>),
     DialResult(Result<(), String>),
     RelayResult(Result<(), String>),
+    PublishResult(Result<(), String>),
 }
 
 enum AppMessage {
@@ -279,6 +281,10 @@ async fn handle_node_command(
                 Ok(addr) => node.listen_on_relay(addr).map_err(|e| e.to_string()),
                 Err(e) => Err(format!("invalid relay address: {e}")),
             };
+            let _ = reply.send(result);
+        }
+        NodeCommand::Publish(text, reply) => {
+            let result = node.publish(text.as_bytes()).map_err(|e| e.to_string());
             let _ = reply.send(result);
         }
     }
@@ -398,7 +404,19 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         return;
     }
 
-    state.push_info(format!("[sent] {trimmed} ({} bytes)", trimmed.len()));
+    state.push_info(format!("[sending] {trimmed}"));
+
+    let (tx, rx) = oneshot::channel();
+    if cmd_tx.send(NodeCommand::Publish(trimmed.to_string(), tx)).is_ok() {
+        let msg_tx = crate::tui::global_msg_tx();
+        tokio::spawn(async move {
+            if let Ok(result) = rx.await {
+                let _ = msg_tx.send(AppMessage::CommandResponse(
+                    CommandResult::PublishResult(result),
+                ));
+            }
+        });
+    }
 }
 
 // ── PqEvent → LogEntry conversion ──────────────────────────────────────
@@ -488,6 +506,12 @@ fn handle_command_result(result: &CommandResult, state: &mut AppState) {
         }
         CommandResult::RelayResult(Err(e)) => {
             state.push_error(format!("relay failed: {e}"));
+        }
+        CommandResult::PublishResult(Ok(())) => {
+            state.push_success("message published");
+        }
+        CommandResult::PublishResult(Err(e)) => {
+            state.push_error(format!("publish failed: {e}"));
         }
     }
 }
@@ -830,13 +854,12 @@ mod tests {
     }
 
     #[test]
-    fn submit_plain_text_logs_sent() {
+    fn submit_plain_text_sends_publish() {
         let mut state = make_state();
         let tx = make_cmd_tx();
         submit_input("hello world", &mut state, &tx);
         assert_eq!(state.logs.len(), 1);
-        assert!(state.logs[0].text.contains("[sent]"));
-        assert!(state.logs[0].text.contains("11 bytes"));
+        assert!(state.logs[0].text.contains("[sending]"));
     }
 
     // ── event_to_log ──────────────────────────────────────────────────
@@ -1016,6 +1039,23 @@ mod tests {
             &mut state,
         );
         assert!(state.logs[0].text.contains("relay failed"));
+    }
+
+    #[test]
+    fn cmd_result_publish_ok() {
+        let mut state = make_state();
+        handle_command_result(&CommandResult::PublishResult(Ok(())), &mut state);
+        assert!(state.logs[0].text.contains("published"));
+    }
+
+    #[test]
+    fn cmd_result_publish_err() {
+        let mut state = make_state();
+        handle_command_result(
+            &CommandResult::PublishResult(Err("no peers".to_string())),
+            &mut state,
+        );
+        assert!(state.logs[0].text.contains("publish failed"));
     }
 
     // ── handle_key_event ──────────────────────────────────────────────
