@@ -1,6 +1,9 @@
 use libp2p::Multiaddr;
 use pqnodium_core::envelope::Envelope;
 use pqnodium_p2p::event::PqEvent;
+use std::collections::HashSet;
+
+const MAX_DEDUP_MESSAGES: usize = 10000;
 use pqnodium_p2p::node::PqNode;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -136,6 +139,7 @@ struct AppState {
     peer_id_display: String,
     connected_count: usize,
     nat_public: Option<bool>,
+    seen_messages: HashSet<[u8; 32]>,
 }
 
 impl AppState {
@@ -152,6 +156,7 @@ impl AppState {
             peer_id_display: display,
             connected_count: 0,
             nat_public: None,
+            seen_messages: HashSet::new(),
         }
     }
 
@@ -718,6 +723,14 @@ fn run_app(
                             state.connected_count = state.connected_count.saturating_sub(1)
                         }
                         PqEvent::NatStatus { is_public } => state.nat_public = Some(*is_public),
+                        PqEvent::MessageReceived { data, .. } => {
+                            if let Ok(env) = Envelope::decode(data) {
+                                let hash = env.content_hash();
+                                if !state.seen_messages.insert(hash) {
+                                    continue; // duplicate, skip
+                                }
+                            }
+                        }
                         _ => {}
                     }
                     state.push_log(event_to_log(&event));
@@ -728,6 +741,7 @@ fn run_app(
                 AppMessage::SendMessage(text) => {
                     let envelope =
                         Envelope::new(state.peer_id.clone(), text.as_bytes().to_vec());
+                    state.seen_messages.insert(envelope.content_hash());
                     let encoded = envelope.encode();
                     let (tx, rx) = oneshot::channel();
                     if cmd_tx.send(NodeCommand::Publish(encoded, tx)).is_ok() {
