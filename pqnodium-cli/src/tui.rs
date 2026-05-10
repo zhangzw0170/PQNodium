@@ -4,6 +4,7 @@ use pqnodium_p2p::event::PqEvent;
 use std::collections::HashSet;
 
 const MAX_DEDUP_MESSAGES: usize = 10000;
+
 use pqnodium_p2p::node::PqNode;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -727,7 +728,15 @@ fn run_app(
                             if let Ok(env) = Envelope::decode(data) {
                                 let hash = env.content_hash();
                                 if !state.seen_messages.insert(hash) {
-                                    continue; // duplicate, skip
+                                    continue;
+                                }
+                                if state.seen_messages.len() > MAX_DEDUP_MESSAGES {
+                                    let remove_count = state.seen_messages.len() - MAX_DEDUP_MESSAGES / 2;
+                                    let hashes: Vec<[u8; 32]> =
+                                        state.seen_messages.iter().take(remove_count).copied().collect();
+                                    for h in hashes {
+                                        state.seen_messages.remove(&h);
+                                    }
                                 }
                             }
                         }

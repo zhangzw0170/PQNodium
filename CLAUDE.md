@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p (QUIC + TCP), and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phases 0–4 are complete — workspace skeleton, core crypto layer, P2P networking with NAT traversal, CLI interface (ratatui TUI), and Tauri app shell are all implemented and tested.
+PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p (QUIC + TCP), and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phases 0–8 are complete — workspace skeleton, core crypto layer, P2P networking with NAT traversal, Gossipsub broadcast messaging, structured envelope wire format, message deduplication, CLI interface (ratatui TUI), and Tauri app shell are all implemented and tested.
 
 **Language convention**: Documentation and commit messages are bilingual (Chinese primary, English secondary). Code, variable names, and technical terms are in English.
 
@@ -49,7 +49,7 @@ pqnodium-core  ←  pqnodium-p2p  ←  pqnodium-cli
 
 ### pqnodium-core: Crypto & Protocol
 
-Four public modules: `crypto`, `identity`, `message`, `state`.
+Four public modules: `crypto`, `identity`, `message`, `state`, plus `envelope` for Gossipsub message wire format.
 
 **Crypto trait hierarchy** — the key architectural pattern:
 - `traits/kem.rs`: `KeyEncapsulation` trait (generic over PublicKey/SecretKey)
@@ -70,13 +70,15 @@ Four public modules: `crypto`, `identity`, `message`, `state`.
 
 **Message wire format** (`message.rs`): 8-byte header `[version:1][type:1][reserved:2][payload_len:4 BE]` + `[nonce:12]` + `[ciphertext]`. Types: `HandshakeInit(0x01)`, `HandshakeResponse(0x02)`, `HandshakeComplete(0x03)`, `Data(0x10)`, `Ack(0x11)`.
 
+**Envelope format** (`envelope.rs`): Gossipsub broadcast wire format `[version:1][timestamp_ms:8 LE][sender_id_len:2 BE][sender_id][payload_len:4 BE][payload]`. Provides `content_hash()` (SHA-256) for deduplication.
+
 ### pqnodium-p2p: libp2p Integration
 
 Modules: `node` (PqNode), `behaviour` (PqBehaviour), `transport`, `config`, `event`, `error`.
 
 **Transport**: SwarmBuilder with QUIC (quinn) + TCP+Noise+Yamux, relay client transport wrapping. Keypair generated per-node with `Keypair::generate_ed25519()`.
 
-**Behaviour composition** (`PqBehaviour`): `Kademlia<MemoryStore>` + `Identify` + `Ping` + `RelayClient` + `RelayServer` + `AutoNAT` + `DCUtR`. mDNS intentionally excluded (causes stale peer discovery on shared networks). Relay server always present but disabled (`max_reservations=0`) when not in server mode.
+**Behaviour composition** (`PqBehaviour`): `Kademlia<MemoryStore>` + `Identify` + `Ping` + `Gossipsub` + `RelayClient` + `RelayServer` + `AutoNAT` + `DCUtR`. mDNS intentionally excluded (causes stale peer discovery on shared networks). Gossipsub uses signed message authenticity and subscribes to the `pqnodium-v1` topic by default. Relay server always present but disabled (`max_reservations=0`) when not in server mode.
 
 **Event loop**: `PqNode::poll_next()` wraps `Swarm::next()` and maps libp2p swarm events into `PqEvent` enum. `PqNode::run()` provides a callback-based loop. Identify-discovered addresses are auto-added to Kademlia routing table. NAT status changes and relay reservations emit dedicated events.
 
@@ -151,4 +153,8 @@ All docs are in `doc/` with bilingual content. Key files:
 | 3 | CLI interface (ratatui TUI) | Done |
 | 3b | Tauri shell + frontend scaffold | Done (shell only, no frontend) |
 | 4 | NAT traversal (AutoNAT, Relay v2, DCUtR) | Done |
-| 4+ | Groups, full GUI, mobile | Future |
+| 5 | Gossipsub broadcast messaging | Done |
+| 6 | Envelope wire format (structured messages) | Done |
+| 7 | Gossipsub integration tests (2-node, 3-node) | Done |
+| 8 | Message deduplication via content hash | Done |
+| 8+ | Encrypted payloads, full GUI, mobile | Future |
