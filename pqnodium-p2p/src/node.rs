@@ -4,13 +4,13 @@ use crate::error::PqP2pError;
 use crate::event::PqEvent;
 use crate::transport;
 use futures::StreamExt;
-use libp2p::swarm::{Swarm, SwarmEvent};
-use libp2p::{Multiaddr, PeerId};
+use libp2p::swarm::SwarmEvent;
+use libp2p::{noise, tcp, yamux, Multiaddr, PeerId, SwarmBuilder};
 use std::collections::HashMap;
 
 /// A PQNodium P2P node wrapping a libp2p Swarm.
 pub struct PqNode {
-    swarm: Swarm<PqBehaviour>,
+    swarm: libp2p::Swarm<PqBehaviour>,
     peer_id: PeerId,
     listeners: Vec<Multiaddr>,
     connected_peers: HashMap<String, Vec<Multiaddr>>,
@@ -25,23 +25,35 @@ impl PqNode {
 
         let id_keys = transport::generate_transport_keypair();
         let peer_id = id_keys.public().to_peer_id();
-        let transport = transport::create_transport(&id_keys)?;
 
-        let behaviour = PqBehaviour::new(
-            peer_id,
-            &id_keys,
-            config.agent_version.clone(),
-            config.kad_query_timeout,
-        );
-
-        let swarm = Swarm::new(
-            transport,
-            behaviour,
-            peer_id,
-            libp2p::swarm::Config::with_tokio_executor()
-                .with_max_negotiating_inbound_streams(config.max_incoming_connections as usize)
-                .with_idle_connection_timeout(config.idle_connection_timeout),
-        );
+        let swarm = SwarmBuilder::with_existing_identity(id_keys)
+            .with_tokio()
+            .with_tcp(
+                tcp::Config::new().nodelay(true),
+                noise::Config::new,
+                yamux::Config::default,
+            )
+            .map_err(|e| PqP2pError::Io(std::io::Error::other(e.to_string())))?
+            .with_quic()
+            .with_relay_client(noise::Config::new, yamux::Config::default)
+            .map_err(|e| PqP2pError::Io(std::io::Error::other(e.to_string())))?
+            .with_behaviour(|key, relay_client| {
+                PqBehaviour::new(
+                    key.public().to_peer_id(),
+                    key,
+                    config.agent_version.clone(),
+                    config.kad_query_timeout,
+                    relay_client,
+                    config.relay_server_enabled,
+                    config.max_relay_circuits,
+                )
+            })
+            .map_err(|e| PqP2pError::Io(std::io::Error::other(e.to_string())))?
+            .with_swarm_config(|cfg| {
+                cfg.with_max_negotiating_inbound_streams(config.max_incoming_connections as usize)
+                    .with_idle_connection_timeout(config.idle_connection_timeout)
+            })
+            .build();
 
         Ok(Self {
             swarm,
@@ -53,8 +65,6 @@ impl PqNode {
     }
 
     /// Start listening on the configured address.
-    /// Returns the listener ID. The actual listening address will be
-    /// reported via a `NewListenAddr` swarm event.
     pub fn start_listening(&mut self, listen_addr: Multiaddr) -> Result<(), PqP2pError> {
         self.swarm
             .listen_on(listen_addr)
@@ -116,6 +126,25 @@ impl PqNode {
         Ok(())
     }
 
+    /// Create a relay reservation with the given relay server peer.
+    /// After reservation, this node is reachable via the relay at:
+    /// `/p2p/{relay_peer_id}/p2p-circuit/p2p/{our_peer_id}`
+    pub fn listen_on_relay(&mut self, relay_addr: Multiaddr) -> Result<(), PqP2pError> {
+        let has_peer_id = relay_addr
+            .iter()
+            .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_)));
+        if !has_peer_id {
+            return Err(PqP2pError::InvalidAddress(
+                "relay address must include /p2p/{relay_peer_id}".to_string(),
+            ));
+        }
+        let circuit_addr = relay_addr.with(libp2p::multiaddr::Protocol::P2pCircuit);
+        self.swarm
+            .listen_on(circuit_addr)
+            .map_err(|e| PqP2pError::transport(format!("relay listen failed: {e}")))?;
+        Ok(())
+    }
+
     /// Poll the swarm once and return any events.
     pub async fn poll_next(&mut self) -> Option<PqEvent> {
         loop {
@@ -124,7 +153,6 @@ impl PqNode {
                     if let Some(pq_event) = self.handle_swarm_event(event) {
                         return Some(pq_event);
                     }
-                    // Internal events: continue polling
                 }
                 None => return None,
             }
@@ -153,9 +181,12 @@ impl PqNode {
                     peer_id: peer_id.to_string(),
                 })
             }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => Some(PqEvent::PeerDisconnected {
-                peer_id: peer_id.to_string(),
-            }),
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.connected_peers.remove(&peer_id.to_string());
+                Some(PqEvent::PeerDisconnected {
+                    peer_id: peer_id.to_string(),
+                })
+            }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 Some(PqEvent::OutboundConnectionError {
                     peer_id: peer_id
@@ -191,6 +222,49 @@ impl PqNode {
                 }
                 None
             }
+            PqBehaviourEvent::RelayClient(event) => match event {
+                libp2p::relay::client::Event::ReservationReqAccepted { relay_peer_id, .. } => {
+                    tracing::info!("relay reservation accepted: {relay_peer_id}");
+                    Some(PqEvent::RelayReservation {
+                        relay_peer_id: relay_peer_id.to_string(),
+                        accepted: true,
+                    })
+                }
+                _ => {
+                    tracing::debug!("relay client event: {event:?}");
+                    None
+                }
+            },
+            PqBehaviourEvent::RelayServer(event) => {
+                tracing::debug!("relay server event: {event:?}");
+                None
+            }
+            PqBehaviourEvent::Autonat(event) => match event {
+                libp2p::autonat::Event::StatusChanged { new, .. } => {
+                    let is_public = matches!(new, libp2p::autonat::NatStatus::Public(_));
+                    tracing::info!("NAT status changed: {new:?}");
+                    Some(PqEvent::NatStatus { is_public })
+                }
+                _ => None,
+            },
+            PqBehaviourEvent::Dcutr(event) => {
+                let libp2p::dcutr::Event {
+                    remote_peer_id,
+                    result,
+                } = event;
+                match result {
+                    Ok(_) => {
+                        tracing::info!("DCUtR: direct connection with {remote_peer_id}");
+                        Some(PqEvent::DirectConnectionUpgraded {
+                            peer_id: remote_peer_id.to_string(),
+                        })
+                    }
+                    Err(e) => {
+                        tracing::warn!("DCUtR failed with {remote_peer_id}: {e}");
+                        None
+                    }
+                }
+            }
         }
     }
 
@@ -210,12 +284,9 @@ impl PqNode {
                         peers_found: 0,
                     })
                 }
-                libp2p::kad::QueryResult::GetClosestPeers(Ok(peers_ok)) => {
-                    for peer_info in &peers_ok.peers {
-                        self.connected_peers
-                            .entry(peer_info.peer_id.to_string())
-                            .or_default();
-                    }
+                libp2p::kad::QueryResult::GetClosestPeers(Ok(_peers_ok)) => {
+                    // Peers are in the routing table, not necessarily connected.
+                    // Let Identify handle address discovery.
                     None
                 }
                 _ => None,
@@ -273,7 +344,6 @@ mod tests {
         let result = node.start_listening(config.listen_addr);
         assert!(result.is_ok());
 
-        // Poll a few times to get the NewListenAddr event
         for _ in 0..10 {
             if let Some(PqEvent::Listening { .. }) = node.poll_next().await {
                 assert!(!node.listeners().is_empty());
@@ -281,8 +351,6 @@ mod tests {
             }
         }
 
-        // If we didn't get a Listening event, the test still passes
-        // because listen_on succeeded.
         assert!(result.is_ok());
     }
 
@@ -319,8 +387,6 @@ mod tests {
         let remote_pid = PeerId::random();
         let addr: Multiaddr = "/ip4/1.2.3.4/udp/4001/quic-v1".parse().unwrap();
         node.add_kad_address(remote_pid, addr);
-
-        // Just verify no panic
     }
 
     #[tokio::test]
@@ -328,10 +394,8 @@ mod tests {
         let config = PqNodeConfig::default();
         let mut node = PqNode::new(&config).unwrap();
 
-        // Invalid address (no peer ID) should fail or be handled gracefully
         let addr: Multiaddr = "/ip4/1.2.3.4/udp/4001/quic-v1".parse().unwrap();
         let result = node.dial(addr);
-        // Dial to non-existent peer should succeed (async, may fail later)
         assert!(result.is_ok());
     }
 
@@ -346,12 +410,10 @@ mod tests {
 
     #[tokio::test]
     async fn node_two_nodes_same_port_fails() {
-        // Two nodes cannot bind to the same specific port
         let config = PqNodeConfig::default();
         let mut node1 = PqNode::new(&config).unwrap();
         node1.start_listening(config.listen_addr).unwrap();
 
-        // Poll to get actual listen address
         let bound_addr = loop {
             if let Some(PqEvent::Listening { address }) = node1.poll_next().await {
                 break address;
@@ -359,8 +421,6 @@ mod tests {
         };
 
         let mut node2 = PqNode::new(&PqNodeConfig::default()).unwrap();
-        // Try to listen on the same address -- may or may not fail
-        // depending on OS, so we don't assert the result
         let _ = node2.listen_on(bound_addr);
     }
 
@@ -369,5 +429,49 @@ mod tests {
         let config = PqNodeConfig::default();
         let node = PqNode::new(&config).unwrap();
         assert!(node.peer_addresses("QmNonExistent").is_none());
+    }
+
+    #[tokio::test]
+    async fn node_with_relay_server() {
+        let config = PqNodeConfig::default().with_relay_server(true);
+        let node = PqNode::new(&config).unwrap();
+        assert!(!node.peer_id().to_string().is_empty());
+    }
+
+    #[tokio::test]
+    async fn node_relay_addr_without_peer_id_fails() {
+        let config = PqNodeConfig::default();
+        let mut node = PqNode::new(&config).unwrap();
+        let addr: Multiaddr = "/ip4/1.2.3.4/udp/4001/quic-v1".parse().unwrap();
+        let result = node.listen_on_relay(addr);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must include /p2p/")
+        );
+    }
+
+    #[tokio::test]
+    async fn node_relay_addr_with_peer_id_ok() {
+        let config = PqNodeConfig::default();
+        let mut node = PqNode::new(&config).unwrap();
+        let relay_pid = PeerId::random();
+        let addr: Multiaddr = format!("/ip4/1.2.3.4/udp/4001/quic-v1/p2p/{relay_pid}")
+            .parse()
+            .unwrap();
+        let result = node.listen_on_relay(addr);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn node_custom_idle_timeout() {
+        let config = PqNodeConfig {
+            idle_connection_timeout: std::time::Duration::from_secs(300),
+            ..Default::default()
+        };
+        let node = PqNode::new(&config).unwrap();
+        assert!(!node.peer_id().to_string().is_empty());
     }
 }

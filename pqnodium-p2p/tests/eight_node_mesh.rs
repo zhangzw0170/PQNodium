@@ -197,7 +197,7 @@ async fn one_to_many_dial() {
 
     let conn_0 = peer_ids_connected(&results[0].1);
     assert!(
-        conn_0.len() >= 1,
+        !conn_0.is_empty(),
         "node 0 should connect to at least 1 of 7 peers, got {}",
         conn_0.len()
     );
@@ -216,10 +216,10 @@ async fn concurrent_full_mesh() {
         nodes.push(n.node);
     }
 
-    for i in 0..NODE_COUNT {
-        for j in 0..NODE_COUNT {
+    for (i, node) in nodes.iter_mut().enumerate() {
+        for (j, addr) in addrs.iter().enumerate() {
             if i != j {
-                nodes[i].dial(addrs[j].clone()).unwrap();
+                node.dial(addr.clone()).unwrap();
             }
         }
     }
@@ -263,8 +263,8 @@ async fn sequential_chain() {
         nodes.push(n.node);
     }
 
-    for i in 0..NODE_COUNT - 1 {
-        nodes[i].dial(addrs[i + 1].clone()).unwrap();
+    for (node, addr) in nodes.iter_mut().zip(addrs.iter().skip(1)) {
+        node.dial(addr.clone()).unwrap();
     }
 
     let mut handles: Vec<_> = nodes.into_iter().map(drive_node).collect();
@@ -360,7 +360,7 @@ async fn identify_discovers_addresses() {
     let disc = peer_ids_discovered(&evs_a);
 
     assert!(
-        !disc.is_empty() || peer_ids_connected(&evs_a).len() >= 1,
+        !disc.is_empty() || !peer_ids_connected(&evs_a).is_empty(),
         "identify should discover or connect to peer"
     );
 }

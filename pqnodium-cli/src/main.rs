@@ -1,13 +1,12 @@
+mod tui;
+
 use clap::Parser;
 use hmac::Hmac;
 use pqnodium_core::identity::Identity;
 use pqnodium_p2p::config::PqNodeConfig;
-use pqnodium_p2p::event::PqEvent;
 use pqnodium_p2p::node::PqNode;
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use std::path::PathBuf;
-use tokio::io::AsyncBufReadExt;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -35,6 +34,15 @@ enum Cli {
         /// Identity file path
         #[arg(short, long, default_value = "identity.bin")]
         identity: PathBuf,
+        /// Act as a relay server for other nodes (requires public IP)
+        #[arg(long)]
+        relay_server: bool,
+        /// Relay peer multiaddr to listen via (can be repeated)
+        #[arg(long)]
+        relay: Vec<String>,
+        /// Run without TUI (headless mode for servers/scripts)
+        #[arg(long)]
+        no_tui: bool,
     },
 }
 
@@ -49,10 +57,13 @@ async fn main() -> anyhow::Result<()> {
             listen,
             bootstrap,
             identity,
+            relay_server,
+            relay,
+            no_tui,
         } => {
-            let config = build_config(&listen, &bootstrap)?;
+            let config = build_config(&listen, &bootstrap, relay_server)?;
             let id = load_or_generate_identity(&identity)?;
-            cmd_start(config, id).await
+            cmd_start(config, id, relay, no_tui).await
         }
     }
 }
@@ -72,7 +83,11 @@ fn init_tracing() {
         .init();
 }
 
-fn build_config(listen: &str, bootstrap: &[String]) -> anyhow::Result<PqNodeConfig> {
+fn build_config(
+    listen: &str,
+    bootstrap: &[String],
+    relay_server: bool,
+) -> anyhow::Result<PqNodeConfig> {
     let listen_addr: libp2p::Multiaddr = listen
         .parse()
         .map_err(|e| anyhow::anyhow!("invalid listen address: {e}"))?;
@@ -82,6 +97,10 @@ fn build_config(listen: &str, bootstrap: &[String]) -> anyhow::Result<PqNodeConf
     if !bootstrap.is_empty() {
         let peers = bootstrap.iter().filter_map(|s| s.parse().ok()).collect();
         config = config.with_bootstrap_peers(peers);
+    }
+
+    if relay_server {
+        config = config.with_relay_server(true);
     }
 
     Ok(config)
@@ -268,13 +287,32 @@ fn load_or_generate_identity(path: &PathBuf) -> anyhow::Result<Identity> {
     }
 }
 
-async fn cmd_start(config: PqNodeConfig, identity: Identity) -> anyhow::Result<()> {
+async fn cmd_start(
+    config: PqNodeConfig,
+    identity: Identity,
+    relay_addrs: Vec<String>,
+    no_tui: bool,
+) -> anyhow::Result<()> {
     info!("Starting PQNodium node, peer_id={}", identity.peer_id());
     let mut node = PqNode::new(&config)?;
     info!("Local peer ID: {}", node.peer_id());
 
     node.start_listening(config.listen_addr.clone())?;
     info!("Listening on random QUIC port...");
+
+    if config.relay_server_enabled {
+        info!("Relay server mode enabled");
+    }
+
+    for addr_str in &relay_addrs {
+        match addr_str.parse::<libp2p::Multiaddr>() {
+            Ok(addr) => match node.listen_on_relay(addr.clone()) {
+                Ok(()) => info!("Listening via relay: {addr}"),
+                Err(e) => tracing::warn!("Failed to listen on relay {addr}: {e}"),
+            },
+            Err(e) => tracing::warn!("Invalid relay address '{addr_str}': {e}"),
+        }
+    }
 
     let bootstrapped = !config.bootstrap_peers.is_empty();
     if bootstrapped {
@@ -295,115 +333,39 @@ async fn cmd_start(config: PqNodeConfig, identity: Identity) -> anyhow::Result<(
         }
     }
 
-    info!("PQNodium node is running. Press Ctrl+C to stop.");
-    info!("Type a message and press Enter to broadcast.");
-
-    run_interactive(node).await
+    if no_tui {
+        run_headless(node).await
+    } else {
+        tui::run_tui(node)
+    }
 }
 
-async fn run_interactive(mut node: PqNode) -> anyhow::Result<()> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<PqEvent>(32);
-
-    // Spawn event loop in background — forwards swarm events to channel.
-    let event_handle = tokio::spawn(async move {
-        while let Some(event) = node.poll_next().await {
-            if tx.send(event).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut stdout = std::io::BufWriter::new(std::io::stdout());
-    let mut input = String::new();
-
+async fn run_headless(mut node: PqNode) -> anyhow::Result<()> {
+    use pqnodium_p2p::event::PqEvent;
     loop {
-        // Print prompt
-        write!(stdout, "> ")?;
-        stdout.flush()?;
-
-        input.clear();
-
-        // Race between stdin input and P2P events.
-        tokio::select! {
-            line = stdin.read_line(&mut input) => {
-                if line? == 0 {
-                    info!("Input closed, shutting down...");
-                    break;
+        if let Some(event) = node.poll_next().await {
+            match event {
+                PqEvent::Listening { address } => info!("listening on {address}"),
+                PqEvent::PeerConnected { peer_id } => info!("peer connected: {peer_id}"),
+                PqEvent::PeerDisconnected { peer_id } => info!("peer disconnected: {peer_id}"),
+                PqEvent::MessageReceived { from, data } => {
+                    let text = String::from_utf8_lossy(&data);
+                    info!("message from {from}: {text}");
                 }
-
-                let trimmed = input.trim();
-                if trimmed.is_empty() {
-                    continue;
+                PqEvent::NatStatus { is_public } => {
+                    info!("NAT status: {}", if is_public { "public" } else { "private" });
                 }
-
-                if trimmed == "/quit" || trimmed == "/exit" {
-                    info!("Shutting down...");
-                    break;
+                PqEvent::RelayReservation { relay_peer_id, accepted } => {
+                    info!("relay reservation {relay_peer_id}: {}", if accepted { "accepted" } else { "rejected" });
                 }
-
-                if trimmed == "/peers" {
-                    // Note: node is owned by the spawned task, so we can't call node methods here.
-                    writeln!(stdout, "[peers] (node handle in background)")?;
-                    continue;
+                PqEvent::PeerDiscovered { peer_id, addresses } => {
+                    let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
+                    info!("discovered peer {peer_id} via {}", addrs.join(", "));
                 }
-
-                if trimmed == "/id" {
-                    writeln!(stdout, "[id] (node handle in background)")?;
-                    continue;
-                }
-
-                if let Some(addr_str) = trimmed.strip_prefix("/dial ") {
-                    writeln!(stdout, "[info] dial {addr_str} (not yet wired)")?;
-                    continue;
-                }
-
-                if trimmed.starts_with("/help") || trimmed == "/?" {
-                    writeln!(stdout, "Commands:")?;
-                    writeln!(stdout, "  <message>     Broadcast a text message")?;
-                    writeln!(stdout, "  /help         Show this help")?;
-                    writeln!(stdout, "  /quit         Exit")?;
-                    continue;
-                }
-
-                info!("Message sent ({} bytes)", trimmed.len());
-                writeln!(stdout, "[sent] {trimmed} ({} bytes)", trimmed.len())?;
-            }
-
-            event = rx.recv() => {
-                let Some(event) = event else { break };
-                match event {
-                    PqEvent::Listening { address } => {
-                        // Overwrite the "> " prompt with the event, then re-print prompt.
-                        writeln!(stdout, "\r[listen] {address}")?;
-                    }
-                    PqEvent::PeerConnected { peer_id } => {
-                        writeln!(stdout, "\r[connected] {peer_id}")?;
-                    }
-                    PqEvent::PeerDisconnected { peer_id } => {
-                        writeln!(stdout, "\r[disconnected] {peer_id}")?;
-                    }
-                    PqEvent::PeerDiscovered { peer_id, addresses } => {
-                        writeln!(stdout, "\r[discovered] {peer_id} at {addresses:?}")?;
-                    }
-                    PqEvent::KademliaBootstrapResult {
-                        success,
-                        peers_found,
-                    } => {
-                        writeln!(
-                            stdout,
-                            "\r[kad] bootstrap: {} ({peers_found} peers)",
-                            if success { "ok" } else { "failed" },
-                        )?;
-                    }
-                    _ => {}
-                }
+                _ => {}
             }
         }
     }
-
-    event_handle.abort();
-    Ok(())
 }
 
 #[cfg(test)]
@@ -440,7 +402,7 @@ mod tests {
     fn parse_start_with_bootstrap() {
         let peer_id = libp2p::PeerId::random();
         let addr = format!("/ip4/1.2.3.4/udp/4001/quic-v1/p2p/{peer_id}");
-        let config = build_config("/ip4/0.0.0.0/udp/0/quic-v1", &[addr]).unwrap();
+        let config = build_config("/ip4/0.0.0.0/udp/0/quic-v1", &[addr], false).unwrap();
         assert_eq!(config.bootstrap_peers.len(), 1);
     }
 
@@ -458,13 +420,13 @@ mod tests {
 
     #[test]
     fn build_config_default() {
-        let config = build_config("/ip4/0.0.0.0/udp/0/quic-v1", &[]).unwrap();
+        let config = build_config("/ip4/0.0.0.0/udp/0/quic-v1", &[], false).unwrap();
         assert!(config.bootstrap_peers.is_empty());
     }
 
     #[test]
     fn build_config_invalid_addr() {
-        let result = build_config("not-an-address", &[]);
+        let result = build_config("not-an-address", &[], false);
         assert!(result.is_err());
     }
 
@@ -519,7 +481,7 @@ mod tests {
     #[test]
     fn load_truncated_identity_fails() {
         let tmp = std::env::temp_dir().join("pqnodium_truncated.bin");
-        std::fs::write(&tmp, &[0u8; 10]).unwrap();
+        std::fs::write(&tmp, [0u8; 10]).unwrap();
 
         let result = load_or_generate_identity(&tmp);
         assert!(result.is_err());
@@ -585,14 +547,6 @@ mod tests {
         assert!(result.is_err());
 
         let _ = std::fs::remove_file(&tmp);
-    }
-
-    #[test]
-    fn display_event() {
-        let addr: libp2p::Multiaddr = "/ip4/127.0.0.1/udp/1234/quic-v1".parse().unwrap();
-        let event = PqEvent::Listening { address: addr };
-        let s = event.to_string();
-        assert!(s.contains("127.0.0.1"));
     }
 
     #[test]

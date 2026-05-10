@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p (QUIC + TCP), and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phases 0–3 are complete — workspace skeleton, core crypto layer, P2P networking, and CLI interface are all implemented and tested.
+PQNodium is a post-quantum secure, decentralized messaging protocol built with Rust. It replaces centralized servers with a pure P2P architecture using libp2p (QUIC + TCP), and post-quantum cryptography (ML-KEM-768 key exchange, ML-DSA-65 signatures). Phases 0–4 are complete — workspace skeleton, core crypto layer, P2P networking with NAT traversal, CLI interface (ratatui TUI), and Tauri app shell are all implemented and tested.
 
 **Language convention**: Documentation and commit messages are bilingual (Chinese primary, English secondary). Code, variable names, and technical terms are in English.
 
@@ -74,24 +74,30 @@ Four public modules: `crypto`, `identity`, `message`, `state`.
 
 Modules: `node` (PqNode), `behaviour` (PqBehaviour), `transport`, `config`, `event`, `error`.
 
-**Transport**: QUIC (quinn) preferred, TCP+Noise+Yamux fallback via `OrTransport`. Keypair generated per-node with `Keypair::generate_ed25519()`.
+**Transport**: SwarmBuilder with QUIC (quinn) + TCP+Noise+Yamux, relay client transport wrapping. Keypair generated per-node with `Keypair::generate_ed25519()`.
 
-**Behaviour composition** (`PqBehaviour`): `Kademlia<MemoryStore>` + `Identify` + `Ping`. mDNS intentionally excluded (causes stale peer discovery on shared networks).
+**Behaviour composition** (`PqBehaviour`): `Kademlia<MemoryStore>` + `Identify` + `Ping` + `RelayClient` + `RelayServer` + `AutoNAT` + `DCUtR`. mDNS intentionally excluded (causes stale peer discovery on shared networks). Relay server always present but disabled (`max_reservations=0`) when not in server mode.
 
-**Event loop**: `PqNode::poll_next()` wraps `Swarm::next()` and maps libp2p swarm events into `PqEvent` enum. `PqNode::run()` provides a callback-based loop. Identify-discovered addresses are auto-added to Kademlia routing table.
+**Event loop**: `PqNode::poll_next()` wraps `Swarm::next()` and maps libp2p swarm events into `PqEvent` enum. `PqNode::run()` provides a callback-based loop. Identify-discovered addresses are auto-added to Kademlia routing table. NAT status changes and relay reservations emit dedicated events.
 
 **Config**: `PqNodeConfig` with builder pattern. Default: bind `0.0.0.0:0/quic-v1`, 4 MiB max message, 128 max connections, 60s Kademlia query timeout.
 
 ### pqnodium-cli: Terminal Interface
 
-Two subcommands via clap: `generate` (create identity keypair) and `start` (run P2P node with interactive REPL).
+Two subcommands via clap: `generate` (create identity keypair) and `start` (run P2P node with ratatui TUI). The TUI has a log panel, command input bar (`/id`, `/peers`, `/dial`, `/listeners`, `/relay`, `/nat`, `/help`, `/quit`), and scroll support. CLI flags: `--relay-server` (act as relay), `--relay <addr>` (listen via relay).
 
 **Identity file format**: `[magic: 18 bytes][ed_pk_len: u32 LE][ed_pk][ed_sk_len: u32 LE][ed_sk][ml_pk_len: u32 LE][ml_pk][ml_sk_len: u32 LE][ml_sk][HMAC-SHA256: 32]`. HMAC key = `SHA-256(ed_sk || ml_sk)`. Uses `subtle::ConstantTimeEq` for verification. File permissions set to owner-only (0600 on Unix, ACL on Windows).
 
 ### Protocol Stack (bottom-up)
 
 ```
-UDP/TCP → QUIC (quinn) or TCP+Noise+Yamux → Identify → Ping → Kademlia DHT → App layer
+UDP/TCP → QUIC (quinn) or TCP+Noise+Yamux
+        → Identify → Ping → Kademlia DHT
+        → AutoNAT (NAT type detection)
+        → Relay v2 Client (relay fallback)
+        → Relay v2 Server (optional, public nodes)
+        → DCUtR (hole-punching direct upgrade)
+        → App layer
 ```
 
 ### Crypto Design
@@ -142,6 +148,7 @@ All docs are in `doc/` with bilingual content. Key files:
 | 0 | Workspace skeleton, CI, directory structure | Done |
 | 1 | Core crypto (identity, encryption, message protocol) | Done |
 | 2 | P2P layer (libp2p, Kademlia, QUIC) | Done |
-| 3 | CLI interface | Current |
+| 3 | CLI interface (ratatui TUI) | Done |
 | 3b | Tauri shell + frontend scaffold | Done (shell only, no frontend) |
-| 4+ | NAT traversal, groups, full GUI, mobile | Future |
+| 4 | NAT traversal (AutoNAT, Relay v2, DCUtR) | Done |
+| 4+ | Groups, full GUI, mobile | Future |

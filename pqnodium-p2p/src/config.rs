@@ -14,6 +14,11 @@ pub struct PqNodeConfig {
     /// Duration after which an idle connection is closed.
     /// Must be longer than the Ping interval (default 15s) to prevent premature disconnects.
     pub idle_connection_timeout: Duration,
+    /// Whether this node should act as a relay server for other nodes.
+    /// Only useful for nodes with public IP addresses.
+    pub relay_server_enabled: bool,
+    /// Maximum number of concurrent relay circuits (relay server mode only).
+    pub max_relay_circuits: usize,
 }
 
 impl Default for PqNodeConfig {
@@ -28,6 +33,8 @@ impl Default for PqNodeConfig {
             max_message_size: 4 * 1024 * 1024, // 4 MiB
             max_incoming_connections: 128,
             idle_connection_timeout: Duration::from_secs(24 * 60 * 60), // 24h; QUIC keepalive (5s) keeps transport alive
+            relay_server_enabled: false,
+            max_relay_circuits: 16,
         }
     }
 }
@@ -52,6 +59,11 @@ impl PqNodeConfig {
 
     pub fn with_kad_timeout(mut self, timeout: Duration) -> Self {
         self.kad_query_timeout = timeout;
+        self
+    }
+
+    pub fn with_relay_server(mut self, enabled: bool) -> Self {
+        self.relay_server_enabled = enabled;
         self
     }
 
@@ -84,7 +96,12 @@ mod tests {
         assert!(config.agent_version.starts_with("pqnodium/"));
         assert_eq!(config.kad_query_timeout, Duration::from_secs(60));
         assert_eq!(config.max_message_size, 4 * 1024 * 1024);
-        assert_eq!(config.idle_connection_timeout, Duration::from_secs(24 * 60 * 60));
+        assert_eq!(
+            config.idle_connection_timeout,
+            Duration::from_secs(24 * 60 * 60)
+        );
+        assert!(!config.relay_server_enabled);
+        assert_eq!(config.max_relay_circuits, 16);
     }
 
     #[test]
@@ -103,10 +120,12 @@ mod tests {
         let config = PqNodeConfig::default()
             .with_bootstrap_peers(vec![peer_addr.clone()])
             .with_agent_version("pqnodium-test/0.0.1")
-            .with_kad_timeout(Duration::from_secs(30));
+            .with_kad_timeout(Duration::from_secs(30))
+            .with_relay_server(true);
         assert_eq!(config.bootstrap_peers.len(), 1);
         assert_eq!(config.agent_version, "pqnodium-test/0.0.1");
         assert_eq!(config.kad_query_timeout, Duration::from_secs(30));
+        assert!(config.relay_server_enabled);
     }
 
     #[test]

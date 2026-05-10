@@ -17,3 +17,5 @@ libp2p = { version = "0.55", features = ["quic"] }
 sha2 = "0.10"
 hmac = "0.12"
 subtle = "2"
+ratatui = "0.30"
+crossterm = "0.29"
