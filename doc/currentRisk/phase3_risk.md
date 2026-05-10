@@ -34,10 +34,24 @@
 - **Mitigation**: Never accept passphrases as command-line arguments. Use `rpassword` or similar crate for secure stdin input. Clear passphrase from memory immediately after use.
 - **Status**: Deferred — no passphrase feature yet, but should be enforced when added
 
+### [RISK-305] Multiaddr Bootstrap Silently Dropped on Windows (Git Bash) — MEDIUM
+- **Severity**: Medium
+- **Impact**: On Windows with Git Bash (MSYS2), multiaddr strings like `/ip4/1.2.3.4/udp/9999/quic-v1/p2p/...` are auto-converted to Windows paths by MSYS path conversion. The `filter_map(|s| s.parse().ok())` in `build_config()` silently drops unparseable addresses, resulting in an empty bootstrap list with no error message.
+- **Trigger**: Running `pqnodium-cli start -b "/ip4/..."` in Git Bash on Windows.
+- **Mitigation**: Set `MSYS_NO_PATHCONV=1` environment variable. Long-term: add validation that warns when `-b` is specified but no bootstrap peers were parsed.
+- **Status**: ⚠️ Workaround — `MSYS_NO_PATHCONV=1`
+
+### [RISK-306] UFW Blocks P2P Listening Port — LOW
+- **Severity**: Low
+- **Impact**: Ubuntu's default UFW firewall blocks non-standard ports. P2P nodes cannot accept incoming connections unless the user manually opens the port.
+- **Trigger**: Running a node on Ubuntu with UFW enabled.
+- **Mitigation**: Document the required `ufw allow` command. Consider auto-detecting UFW status and printing a warning on startup.
+- **Status**: ⚠️ Workaround — manual `ufw allow 9999/tcp && ufw allow 9999/udp`
+
 ## Threat Model (Phase 3)
 - **Attacker Capability**: Local user on shared system, malware with file system access, shoulder surfing.
 - **Attack Surface**: Identity file on disk, CLI argument parsing, terminal I/O, log files.
 - **Trust Boundary**: Local filesystem and terminal are partially trusted (single-user assumed, but not guaranteed).
 
 ## Security Decisions (ADRs)
-- **ADR-010**: Identity serialization uses `bincode` for compact binary format. No encryption at rest (pending RISK-302 mitigation).
+- **ADR-010**: Identity serialization uses custom binary format with length-prefixed fields. HMAC-SHA256 integrity protection (key derived from secret keys). No encryption at rest (pending passphrase-based encryption).

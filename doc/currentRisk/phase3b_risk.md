@@ -39,7 +39,7 @@
 - **Impact**: Secret key material or plaintext messages could be inadvertently exposed to the frontend JavaScript context, where they are accessible to any script running in the webview.
 - **Trigger**: IPC handler returning more data than necessary.
 - **Mitigation**: Never send secret key material through IPC. Only send derived public data (PeerId, public keys, message metadata). Sanitize all IPC responses to remove sensitive fields.
-- **Status**: Open — design principle to enforce during implementation
+- **Status**: ✅ Verified — current implementation follows this principle; no secret key material is exposed through IPC
 
 ## Threat Model (Phase 3b)
 - **Attacker Capability**: XSS in webview, compromised frontend, malicious IPC commands, outdated system webview.

@@ -28,7 +28,7 @@ Thank you for your interest in contributing!
 |---------|-------------|
 | `cargo build --workspace` | Build all crates |
 | `cargo build --release -p pqnodium-cli` | Build CLI (release) |
-| `cargo test` | Run all tests (125 tests) |
+| `cargo test` | Run all tests (124 tests) |
 | `cargo test -p pqnodium-core` | Run core tests only |
 | `cargo test -p pqnodium-p2p` | Run P2P tests only |
 | `cargo test -p pqnodium-p2p --test eight_node_mesh` | Run 8-node mesh integration test |
@@ -47,6 +47,14 @@ Thank you for your interest in contributing!
 - **Integration tests**: `pqnodium-p2p/tests/eight_node_mesh.rs` (8-node mesh topology)
 - **CI gate**: `cargo fmt --check` + `cargo clippy` + `cargo test` all must pass
 - **Coverage target**: 80%+
+
+## Windows (Git Bash) Notes
+
+Multiaddr bootstrap addresses (e.g., `/ip4/1.2.3.4/udp/9999/quic-v1/p2p/...`) are silently converted to Windows paths by MSYS2 path conversion. Set this environment variable before running:
+
+```bash
+export MSYS_NO_PATHCONV=1
+```
 
 ## Pull Request Guidelines
 

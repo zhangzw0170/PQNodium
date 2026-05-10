@@ -41,6 +41,13 @@
 - **Mitigation**: Maintain a diverse set of bootstrap peers. Implement multi-source bootstrapping (DNS multi-address, well-known peer list). Monitor bootstrap peer health.
 - **Status**: Accepted risk — standard for DHT-based networks
 
+### [RISK-207] Connection Drops After ~10s Due to Idle Timeout — MEDIUM
+- **Severity**: Medium
+- **Impact**: P2P connections are silently closed by libp2p's default idle_connection_timeout (10s). Ping substreams use `ignore_for_keep_alive()` so they don't reset the swarm idle timer. After initial Identify exchange, the connection has no "active" substreams and the swarm closes it.
+- **Trigger**: Any two-node connection without continuous application-level data exchange.
+- **Mitigation**: Set `idle_connection_timeout` to 24h in `PqNodeConfig`. The QUIC transport already has a 5-second keepalive interval that keeps the transport alive independently.
+- **Status**: ✅ Fixed — `idle_connection_timeout: Duration::from_secs(24 * 60 * 60)`
+
 ## Threat Model (Phase 2)
 - **Attacker Capability**: Network-level attacker (MITM, connection flooding), malicious DHT peers, identity spoofing.
 - **Attack Surface**: QUIC/TCP listeners, Kademlia DHT queries/responses, Identify protocol exchanges, connection management.

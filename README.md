@@ -21,10 +21,19 @@ PQNodium is a post-quantum secure, decentralized messaging protocol built with R
 ## 快速开始 / Quick Start
 
 ```bash
-# 构建核心 / Build core
-cargo build --release
+# 构建 / Build
+cargo build --release -p pqnodium-cli
 
-# 运行开发模式 / Run dev
+# 生成身份 / Generate identity
+./target/release/pqnodium-cli generate
+
+# 启动节点 / Start node (TUI)
+./target/release/pqnodium-cli start
+
+# 连接对等节点 / Dial a peer
+# 在 TUI 中输入: /dial /ip4/<IP>/udp/<PORT>/quic-v1/p2p/<PEER_ID>
+
+# 运行开发模式 / Run dev (Tauri)
 cargo tauri dev
 ```
 
@@ -41,12 +50,15 @@ cargo tauri dev
 | [AI 声明 / AI Declaration](./doc/AI_DECLARATION.md) | AI 工具使用声明 |
 | [构建指南 / Build Guide](./doc/build/BUILD.md) | 编译与交叉编译 |
 
-## 目标平台 / Target Platforms (Phase 1)
+## 目标平台 / Target Platforms
 
 | 平台 / Platform | 架构 / Arch | 状态 / Status |
 |-----------------|-------------|--------------|
-| Windows | `x86_64-pc-windows-msvc` | 🚧 开发中 |
-| Linux | `x86_64-unknown-linux-gnu` | 🚧 开发中 |
+| Windows | `x86_64-pc-windows-msvc` | ✅ 已验证 / Verified |
+| Linux | `x86_64-unknown-linux-gnu` | ✅ 已验证 / Verified |
+
+跨平台 P2P 连接已在 Windows ↔ Ubuntu 24.04 (QUIC 有线直连) 上验证成功。
+Cross-platform P2P connectivity verified on Windows ↔ Ubuntu 24.04 (QUIC wired direct).
 
 ## 许可 / License
 

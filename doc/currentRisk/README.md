@@ -11,25 +11,39 @@ This directory contains the security risk analysis for each phase of PQNodium de
 | **Phase 2** | [P2P Network (libp2p + QUIC + TCP)](./phase2_risk.md) | ✅ Complete |
 | **Phase 3** | [CLI Interface](./phase3_risk.md) | ✅ Complete |
 | **Phase 3b** | [Tauri Shell + Frontend](./phase3b_risk.md) | ✅ Complete |
-| **Phase 4+** | NAT Traversal, Groups, GUI | ⏳ Pending |
+| **Phase 4** | [NAT Traversal](./phase4_risk.md) | ✅ Complete |
 
 ## Priority Remediation Queue
 
-All HIGH-severity risks have been fixed:
+All HIGH and MEDIUM risks have been fixed:
 
 | ID | Risk | Phase | Status |
 |----|------|-------|--------|
+| RISK-001 | Dependency supply chain | 0 | ✅ Mitigated — `cargo audit` CI |
 | RISK-101 | Transport handshake not using HybridKem | 1 | ✅ Fixed — app-layer handshake uses HybridKem |
 | RISK-203 | No identity binding (Ed25519 ↔ ML-DSA-65) | 2 | ✅ Fixed — PeerId binds both keys |
-| RISK-301 | Identity file lacks permission controls | 3 | ✅ Fixed — 0600/ACL permissions set |
+| RISK-201 | Unwrap in transport construction | 2 | ✅ Fixed |
+| RISK-202 | No rate limiting on P2P connections | 2 | ✅ Fixed — max 128 incoming |
+| RISK-301 | Identity file lacks permission controls | 3 | ✅ Fixed — 0600/ACL |
+| RISK-302 | Identity file lacks integrity protection | 3 | ✅ Fixed — HMAC-SHA256 |
+| RISK-401 | IPC handlers lack input validation | 3b | ✅ Fixed — `validate_string_input` |
+| RISK-402 | No Content Security Policy | 3b | ✅ Fixed — CSP in tauri.conf.json |
+| RISK-404 | No IPC rate limiting | 3b | ✅ Fixed — 30 cmds/sec |
+| RISK-207 | Connection drops after ~10s (idle timeout) | 2 | ✅ Fixed — 24h idle timeout |
 
-### Remaining MEDIUM risks
+### Remaining LOW risks (deferred)
 
 | ID | Risk | Phase |
 |----|------|-------|
-| RISK-202 | No rate limiting on P2P connections | 2 |
-| RISK-302 | Identity file lacks integrity protection | 3 |
-| RISK-401/402/404 | Tauri IPC validation, CSP, rate limiting | 3b |
+| RISK-106 | Nonce wrap-around protection | 1 |
+| RISK-107 | No key rotation mechanism | 1 |
+| RISK-109 | No FIPS 203/204 KAT vectors | 1 |
+| RISK-206 | DHT bootstrap hardcoded peers | 2 |
+| RISK-304 | No secure stdin for passphrase | 3 |
+| RISK-305 | Multiaddr bootstrap silently dropped (Git Bash/MSYS2) | 3 |
+| RISK-306 | UFW blocks P2P listening port | 3 |
+| RISK-403 | System webview exploitation | 3b |
+| RISK-405 | Sensitive data exposure to frontend | 3b |
 
 ## How to Use
 

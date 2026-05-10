@@ -64,9 +64,11 @@
 ├─────────────────────────────────────────┤
 │   libp2p                                │
 │   ├── Kademlia (DHT 发现)               │
-│   ├── GossipSub (群组广播)              │
-│   ├── Relay (NAT 穿透 fallback)         │
-│   └── mDNS (LAN 发现)                   │
+│   ├── Identify (节点信息交换)            │
+│   ├── AutoNAT (NAT 类型检测)            │
+│   ├── Relay v2 (中继回退/服务器)         │
+│   ├── DCUtR (打洞直连升级)              │
+│   └── GossipSub (群组广播)              │
 ├─────────────────────────────────────────┤
 │   UDP                                   │
 └─────────────────────────────────────────┘
@@ -221,15 +223,24 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 **✅ 首个里程碑交付**:
 - [x] PQC Hybrid 握手完成 (X25519 + ML-KEM-768)
 - [x] 加密消息互发 (ChaCha20-Poly1305)
-- [ ] Windows 节点 ↔ Linux 节点 直连成功（待跨平台测试）
+- [x] Windows 节点 ↔ Linux 节点 直连成功（QUIC 有线直连已验证）
 - [ ] 文件互传
-- [ ] Kademlia DHT 发现彼此（待跨节点测试）
+- [x] Kademlia DHT 发现彼此（已跨节点验证）
+
+**✅ 第二个里程碑交付 (Phase 4)**:
+- [x] SwarmBuilder 迁移 + Relay Client 传输层
+- [x] AutoNAT NAT 类型检测
+- [x] Relay v2 Client（手动指定 relay 地址）
+- [x] Relay v2 Server（可选，`--relay-server`）
+- [x] DCUtR 打洞直连升级
+- [x] CLI/TUI 集成（`--relay`, `--relay-server`, `/relay`, `/nat`）
+- [x] CI 全绿（Lint, Test, Build, Audit）
 
 ### Phase 4+: 后续扩展
 
 | 阶段 | 目标 | 关键交付 |
 |------|------|---------|
-| **Phase 4** | NAT 穿透 | Relay fallback、UDP hole punching |
+| **Phase 4** | NAT 穿透 | Relay fallback、UDP hole punching | ✅ Done |
 | **Phase 5** | 群组 | GossipSub 或 MLS 群组通信 |
 | **Phase 6** | Tauri GUI | 完整聊天界面、主题、多语言 |
 | **Phase 7** | 扩展平台 | macOS / Android (按需) |
