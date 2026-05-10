@@ -1,4 +1,5 @@
 use libp2p::Multiaddr;
+use pqnodium_core::envelope::Envelope;
 use pqnodium_p2p::event::PqEvent;
 use pqnodium_p2p::node::PqNode;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -132,12 +133,14 @@ struct AppState {
     auto_scroll: bool,
     should_quit: bool,
     peer_id: String,
+    peer_id_display: String,
     connected_count: usize,
     nat_public: Option<bool>,
 }
 
 impl AppState {
     fn new(peer_id: String) -> Self {
+        let display = shorten_peer_id(&peer_id);
         Self {
             logs: Vec::new(),
             input: String::new(),
@@ -145,7 +148,8 @@ impl AppState {
             scroll_offset: 0,
             auto_scroll: true,
             should_quit: false,
-            peer_id: shorten_peer_id(&peer_id),
+            peer_id,
+            peer_id_display: display,
             connected_count: 0,
             nat_public: None,
         }
@@ -191,7 +195,7 @@ enum NodeCommand {
     GetConnectedPeers(oneshot::Sender<Vec<String>>),
     Dial(String, oneshot::Sender<Result<(), String>>),
     ListenOnRelay(String, oneshot::Sender<Result<(), String>>),
-    Publish(String, oneshot::Sender<Result<(), String>>),
+    Publish(Vec<u8>, oneshot::Sender<Result<(), String>>),
 }
 
 enum CommandResult {
@@ -206,6 +210,7 @@ enum CommandResult {
 enum AppMessage {
     PqEvent(PqEvent),
     CommandResponse(CommandResult),
+    SendMessage(String),
 }
 
 // ── Keyboard reader (OS thread) ────────────────────────────────────────
@@ -283,8 +288,8 @@ async fn handle_node_command(
             };
             let _ = reply.send(result);
         }
-        NodeCommand::Publish(text, reply) => {
-            let result = node.publish(text.as_bytes()).map_err(|e| e.to_string());
+        NodeCommand::Publish(data, reply) => {
+            let result = node.publish(&data).map_err(|e| e.to_string());
             let _ = reply.send(result);
         }
     }
@@ -314,8 +319,9 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         if cmd_tx.send(NodeCommand::GetPeerId(tx)).is_ok() {
             tokio::spawn(async move {
                 if let Ok(peer_id) = rx.await {
-                    let _ = crate::tui::global_msg_tx()
-                        .send(AppMessage::CommandResponse(CommandResult::PeerId(peer_id)));
+                    if let Some(tx) = crate::tui::global_msg_tx() {
+                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::PeerId(peer_id)));
+                    }
                 }
             });
         }
@@ -327,9 +333,11 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         if cmd_tx.send(NodeCommand::GetConnectedPeers(tx)).is_ok() {
             tokio::spawn(async move {
                 if let Ok(peers) = rx.await {
-                    let _ = crate::tui::global_msg_tx().send(AppMessage::CommandResponse(
-                        CommandResult::ConnectedPeers(peers),
-                    ));
+                    if let Some(tx) = crate::tui::global_msg_tx() {
+                        let _ = tx.send(AppMessage::CommandResponse(
+                            CommandResult::ConnectedPeers(peers),
+                        ));
+                    }
                 }
             });
         }
@@ -341,9 +349,11 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         if cmd_tx.send(NodeCommand::GetListeners(tx)).is_ok() {
             tokio::spawn(async move {
                 if let Ok(listeners) = rx.await {
-                    let _ = crate::tui::global_msg_tx().send(AppMessage::CommandResponse(
-                        CommandResult::Listeners(listeners),
-                    ));
+                    if let Some(tx) = crate::tui::global_msg_tx() {
+                        let _ = tx.send(AppMessage::CommandResponse(
+                            CommandResult::Listeners(listeners),
+                        ));
+                    }
                 }
             });
         }
@@ -361,9 +371,11 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         if cmd_tx.send(NodeCommand::ListenOnRelay(addr, tx)).is_ok() {
             tokio::spawn(async move {
                 if let Ok(result) = rx.await {
-                    let _ = crate::tui::global_msg_tx().send(AppMessage::CommandResponse(
-                        CommandResult::RelayResult(result),
-                    ));
+                    if let Some(tx) = crate::tui::global_msg_tx() {
+                        let _ = tx.send(AppMessage::CommandResponse(
+                            CommandResult::RelayResult(result),
+                        ));
+                    }
                 }
             });
         }
@@ -376,9 +388,11 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
         if cmd_tx.send(NodeCommand::Dial(addr, tx)).is_ok() {
             tokio::spawn(async move {
                 if let Ok(result) = rx.await {
-                    let _ = crate::tui::global_msg_tx().send(AppMessage::CommandResponse(
-                        CommandResult::DialResult(result),
-                    ));
+                    if let Some(tx) = crate::tui::global_msg_tx() {
+                        let _ = tx.send(AppMessage::CommandResponse(
+                            CommandResult::DialResult(result),
+                        ));
+                    }
                 }
             });
         }
@@ -406,16 +420,8 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
 
     state.push_info(format!("[sending] {trimmed}"));
 
-    let (tx, rx) = oneshot::channel();
-    if cmd_tx.send(NodeCommand::Publish(trimmed.to_string(), tx)).is_ok() {
-        let msg_tx = crate::tui::global_msg_tx();
-        tokio::spawn(async move {
-            if let Ok(result) = rx.await {
-                let _ = msg_tx.send(AppMessage::CommandResponse(
-                    CommandResult::PublishResult(result),
-                ));
-            }
-        });
+    if let Some(msg_tx) = crate::tui::global_msg_tx() {
+        let _ = msg_tx.send(AppMessage::SendMessage(trimmed.to_string()));
     }
 }
 
@@ -442,8 +448,13 @@ fn event_to_log(event: &PqEvent) -> LogEntry {
             }
         }
         PqEvent::MessageReceived { from, data } => {
-            let text = String::from_utf8_lossy(data);
-            LogEntry::info(format!("message from {}: {text}", shorten_peer_id(from)))
+            if let Ok(env) = Envelope::decode(data) {
+                let text = String::from_utf8_lossy(&env.payload);
+                LogEntry::info(format!("{}: {text}", shorten_peer_id(&env.sender_id)))
+            } else {
+                let text = String::from_utf8_lossy(data);
+                LogEntry::info(format!("message from {}: {text}", shorten_peer_id(from)))
+            }
         }
         PqEvent::InboundConnectionError { error } => {
             LogEntry::error(format!("inbound connection error: {error}"))
@@ -472,7 +483,8 @@ fn event_to_log(event: &PqEvent) -> LogEntry {
 fn handle_command_result(result: &CommandResult, state: &mut AppState) {
     match result {
         CommandResult::PeerId(peer_id) => {
-            state.peer_id = shorten_peer_id(peer_id);
+            state.peer_id_display = shorten_peer_id(peer_id);
+            state.peer_id = peer_id.clone();
             state.push_info(format!("peer id: {peer_id}"));
         }
         CommandResult::Listeners(listeners) => {
@@ -606,7 +618,7 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
     let title = Line::from(vec![
         Span::styled(" PQNodium ", Style::default().fg(palette::PURPLE).add_modifier(Modifier::BOLD)),
         Span::styled("│ ", Style::default().fg(palette::TEXT_MUTED)),
-        Span::styled(&state.peer_id, Style::default().fg(palette::TEXT_DIM)),
+        Span::styled(&state.peer_id_display, Style::default().fg(palette::TEXT_DIM)),
         Span::styled(" │ ", Style::default().fg(palette::TEXT_MUTED)),
         Span::styled(
             format!(" {conn_icon} {} connected ", state.connected_count),
@@ -679,8 +691,8 @@ fn render_input_panel(frame: &mut ratatui::Frame, area: Rect, state: &AppState) 
 
 static MSG_TX: OnceLock<mpsc::UnboundedSender<AppMessage>> = OnceLock::new();
 
-fn global_msg_tx() -> mpsc::UnboundedSender<AppMessage> {
-    MSG_TX.get().expect("global_msg_tx not initialized").clone()
+fn global_msg_tx() -> Option<mpsc::UnboundedSender<AppMessage>> {
+    MSG_TX.get().cloned()
 }
 
 // ── Main loop ──────────────────────────────────────────────────────────
@@ -700,7 +712,6 @@ fn run_app(
         while let Ok(msg) = msg_rx.try_recv() {
             match msg {
                 AppMessage::PqEvent(event) => {
-                    // Track state changes for status bar
                     match &event {
                         PqEvent::PeerConnected { .. } => state.connected_count += 1,
                         PqEvent::PeerDisconnected { .. } => {
@@ -713,6 +724,23 @@ fn run_app(
                 }
                 AppMessage::CommandResponse(result) => {
                     handle_command_result(&result, &mut state);
+                }
+                AppMessage::SendMessage(text) => {
+                    let envelope =
+                        Envelope::new(state.peer_id.clone(), text.as_bytes().to_vec());
+                    let encoded = envelope.encode();
+                    let (tx, rx) = oneshot::channel();
+                    if cmd_tx.send(NodeCommand::Publish(encoded, tx)).is_ok() {
+                        if let Some(msg_tx) = crate::tui::global_msg_tx() {
+                            tokio::spawn(async move {
+                                if let Ok(result) = rx.await {
+                                    let _ = msg_tx.send(AppMessage::CommandResponse(
+                                        CommandResult::PublishResult(result),
+                                    ));
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -733,7 +761,7 @@ fn run_app(
 
 // ── Public entry point ─────────────────────────────────────────────────
 
-pub fn run_tui(node: PqNode) -> anyhow::Result<()> {
+pub fn run_tui_with_peer_id(node: PqNode, peer_id: String) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
 
     let (keyboard_tx, keyboard_rx) = mpsc::unbounded_channel::<KeyEvent>();
@@ -744,14 +772,6 @@ pub fn run_tui(node: PqNode) -> anyhow::Result<()> {
 
     let _keyboard_handle = spawn_keyboard_thread(keyboard_tx);
     spawn_event_poller(node, cmd_rx, msg_tx);
-
-    let peer_id = {
-        let (tx, mut rx) = oneshot::channel();
-        let _ = cmd_tx.send(NodeCommand::GetPeerId(tx));
-        // Synchronous-ish: poll once since the node task just started
-        std::thread::sleep(Duration::from_millis(50));
-        rx.try_recv().unwrap_or_default()
-    };
 
     let mut state = AppState::new(peer_id);
     state.push_success("PQNodium started");

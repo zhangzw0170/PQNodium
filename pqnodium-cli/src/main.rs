@@ -2,6 +2,7 @@ mod tui;
 
 use clap::Parser;
 use hmac::Hmac;
+use pqnodium_core::envelope::Envelope;
 use pqnodium_core::identity::Identity;
 use pqnodium_p2p::config::PqNodeConfig;
 use pqnodium_p2p::node::PqNode;
@@ -336,14 +337,16 @@ async fn cmd_start(
         }
     }
 
+    let peer_id_str = node.peer_id().to_string();
+
     if no_tui {
-        run_headless(node).await
+        run_headless(node, peer_id_str).await
     } else {
-        tui::run_tui(node)
+        tui::run_tui_with_peer_id(node, peer_id_str)
     }
 }
 
-async fn run_headless(mut node: PqNode) -> anyhow::Result<()> {
+async fn run_headless(mut node: PqNode, _local_peer_id: String) -> anyhow::Result<()> {
     use pqnodium_p2p::event::PqEvent;
     loop {
         if let Some(event) = node.poll_next().await {
@@ -352,8 +355,13 @@ async fn run_headless(mut node: PqNode) -> anyhow::Result<()> {
                 PqEvent::PeerConnected { peer_id } => info!("peer connected: {peer_id}"),
                 PqEvent::PeerDisconnected { peer_id } => info!("peer disconnected: {peer_id}"),
                 PqEvent::MessageReceived { from, data } => {
-                    let text = String::from_utf8_lossy(&data);
-                    info!("message from {from}: {text}");
+                    if let Ok(env) = Envelope::decode(&data) {
+                        let text = String::from_utf8_lossy(&env.payload);
+                        info!("message from {}: {text}", env.sender_id);
+                    } else {
+                        let text = String::from_utf8_lossy(&data);
+                        info!("raw message from {from}: {text}");
+                    }
                 }
                 PqEvent::NatStatus { is_public } => {
                     info!("NAT status: {}", if is_public { "public" } else { "private" });
