@@ -74,7 +74,9 @@ impl LogLevel {
             LogLevel::Info => Style::default().fg(palette::TEXT),
             LogLevel::Success => Style::default().fg(palette::GREEN),
             LogLevel::Warn => Style::default().fg(palette::YELLOW),
-            LogLevel::Error => Style::default().fg(palette::RED).add_modifier(Modifier::BOLD),
+            LogLevel::Error => Style::default()
+                .fg(palette::RED)
+                .add_modifier(Modifier::BOLD),
         }
     }
 }
@@ -88,24 +90,43 @@ struct LogEntry {
 
 impl LogEntry {
     fn info(text: impl Into<String>) -> Self {
-        Self { timestamp: now_timestamp(), text: text.into(), level: LogLevel::Info }
+        Self {
+            timestamp: now_timestamp(),
+            text: text.into(),
+            level: LogLevel::Info,
+        }
     }
 
     fn success(text: impl Into<String>) -> Self {
-        Self { timestamp: now_timestamp(), text: text.into(), level: LogLevel::Success }
+        Self {
+            timestamp: now_timestamp(),
+            text: text.into(),
+            level: LogLevel::Success,
+        }
     }
 
     fn warn(text: impl Into<String>) -> Self {
-        Self { timestamp: now_timestamp(), text: text.into(), level: LogLevel::Warn }
+        Self {
+            timestamp: now_timestamp(),
+            text: text.into(),
+            level: LogLevel::Warn,
+        }
     }
 
     fn error(text: impl Into<String>) -> Self {
-        Self { timestamp: now_timestamp(), text: text.into(), level: LogLevel::Error }
+        Self {
+            timestamp: now_timestamp(),
+            text: text.into(),
+            level: LogLevel::Error,
+        }
     }
 
     fn to_line(&self) -> Line<'static> {
         Line::from(vec![
-            Span::styled(format!(" {} ", self.timestamp), Style::default().fg(palette::TEXT_MUTED)),
+            Span::styled(
+                format!(" {} ", self.timestamp),
+                Style::default().fg(palette::TEXT_MUTED),
+            ),
             Span::styled(
                 format!("{} ", self.level.icon()),
                 Style::default().fg(self.level.icon_color()),
@@ -326,7 +347,8 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
             tokio::spawn(async move {
                 if let Ok(peer_id) = rx.await {
                     if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::PeerId(peer_id)));
+                        let _ =
+                            tx.send(AppMessage::CommandResponse(CommandResult::PeerId(peer_id)));
                     }
                 }
             });
@@ -356,9 +378,9 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
             tokio::spawn(async move {
                 if let Ok(listeners) = rx.await {
                     if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(
-                            CommandResult::Listeners(listeners),
-                        ));
+                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::Listeners(
+                            listeners,
+                        )));
                     }
                 }
             });
@@ -378,9 +400,9 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
             tokio::spawn(async move {
                 if let Ok(result) = rx.await {
                     if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(
-                            CommandResult::RelayResult(result),
-                        ));
+                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::RelayResult(
+                            result,
+                        )));
                     }
                 }
             });
@@ -395,9 +417,9 @@ fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSende
             tokio::spawn(async move {
                 if let Ok(result) = rx.await {
                     if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(
-                            CommandResult::DialResult(result),
-                        ));
+                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::DialResult(
+                            result,
+                        )));
                     }
                 }
             });
@@ -444,9 +466,16 @@ fn event_to_log(event: &PqEvent) -> LogEntry {
         }
         PqEvent::PeerDiscovered { peer_id, addresses } => {
             let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
-            LogEntry::info(format!("discovered {} at {:?}", shorten_peer_id(peer_id), addrs))
+            LogEntry::info(format!(
+                "discovered {} at {:?}",
+                shorten_peer_id(peer_id),
+                addrs
+            ))
         }
-        PqEvent::KademliaBootstrapResult { success, peers_found } => {
+        PqEvent::KademliaBootstrapResult {
+            success,
+            peers_found,
+        } => {
             if *success {
                 LogEntry::success(format!("Kademlia bootstrap ok ({peers_found} peers)"))
             } else {
@@ -465,19 +494,29 @@ fn event_to_log(event: &PqEvent) -> LogEntry {
         PqEvent::InboundConnectionError { error } => {
             LogEntry::error(format!("inbound connection error: {error}"))
         }
-        PqEvent::OutboundConnectionError { peer_id, error } => {
-            LogEntry::error(format!("outbound error to {}: {error}", shorten_peer_id(peer_id)))
-        }
+        PqEvent::OutboundConnectionError { peer_id, error } => LogEntry::error(format!(
+            "outbound error to {}: {error}",
+            shorten_peer_id(peer_id)
+        )),
         PqEvent::UnknownEvent { description } => LogEntry::warn(format!("unknown: {description}")),
         PqEvent::NatStatus { is_public } => {
             let status = if *is_public { "public" } else { "private" };
             LogEntry::info(format!("NAT status: {status}"))
         }
-        PqEvent::RelayReservation { relay_peer_id, accepted } => {
+        PqEvent::RelayReservation {
+            relay_peer_id,
+            accepted,
+        } => {
             if *accepted {
-                LogEntry::success(format!("relay reservation accepted: {}", shorten_peer_id(relay_peer_id)))
+                LogEntry::success(format!(
+                    "relay reservation accepted: {}",
+                    shorten_peer_id(relay_peer_id)
+                ))
             } else {
-                LogEntry::warn(format!("relay reservation failed: {}", shorten_peer_id(relay_peer_id)))
+                LogEntry::warn(format!(
+                    "relay reservation failed: {}",
+                    shorten_peer_id(relay_peer_id)
+                ))
             }
         }
         PqEvent::DirectConnectionUpgraded { peer_id } => {
@@ -619,12 +658,24 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
     } else {
         palette::TEXT_DIM
     };
-    let conn_icon = if state.connected_count > 0 { "◉" } else { "○" };
+    let conn_icon = if state.connected_count > 0 {
+        "◉"
+    } else {
+        "○"
+    };
 
     let title = Line::from(vec![
-        Span::styled(" PQNodium ", Style::default().fg(palette::PURPLE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " PQNodium ",
+            Style::default()
+                .fg(palette::PURPLE)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("│ ", Style::default().fg(palette::TEXT_MUTED)),
-        Span::styled(&state.peer_id_display, Style::default().fg(palette::TEXT_DIM)),
+        Span::styled(
+            &state.peer_id_display,
+            Style::default().fg(palette::TEXT_DIM),
+        ),
         Span::styled(" │ ", Style::default().fg(palette::TEXT_MUTED)),
         Span::styled(
             format!(" {conn_icon} {} connected ", state.connected_count),
@@ -672,7 +723,12 @@ fn render_input_panel(frame: &mut ratatui::Frame, area: Rect, state: &AppState) 
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(palette::BORDER_BRIGHT))
                 .title(Line::from(vec![
-                    Span::styled(" > ", Style::default().fg(palette::ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        " > ",
+                        Style::default()
+                            .fg(palette::ACCENT)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(
                         "Enter command or message",
                         Style::default().fg(palette::TEXT_DIM),
@@ -731,9 +787,14 @@ fn run_app(
                                     continue;
                                 }
                                 if state.seen_messages.len() > MAX_DEDUP_MESSAGES {
-                                    let remove_count = state.seen_messages.len() - MAX_DEDUP_MESSAGES / 2;
-                                    let hashes: Vec<[u8; 32]> =
-                                        state.seen_messages.iter().take(remove_count).copied().collect();
+                                    let remove_count =
+                                        state.seen_messages.len() - MAX_DEDUP_MESSAGES / 2;
+                                    let hashes: Vec<[u8; 32]> = state
+                                        .seen_messages
+                                        .iter()
+                                        .take(remove_count)
+                                        .copied()
+                                        .collect();
                                     for h in hashes {
                                         state.seen_messages.remove(&h);
                                     }
@@ -748,8 +809,7 @@ fn run_app(
                     handle_command_result(&result, &mut state);
                 }
                 AppMessage::SendMessage(text) => {
-                    let envelope =
-                        Envelope::new(state.peer_id.clone(), text.as_bytes().to_vec());
+                    let envelope = Envelope::new(state.peer_id.clone(), text.as_bytes().to_vec());
                     state.seen_messages.insert(envelope.content_hash());
                     let encoded = envelope.encode();
                     let (tx, rx) = oneshot::channel();

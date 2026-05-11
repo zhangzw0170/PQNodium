@@ -19,6 +19,14 @@ pub struct PqNode {
     _event_counter: u64,
 }
 
+/// Extract a PeerId from a multiaddr's `/p2p/<id>` component.
+fn extract_peer_id(addr: &Multiaddr) -> Option<PeerId> {
+    addr.iter().find_map(|p| match p {
+        libp2p::multiaddr::Protocol::P2p(id) => Some(id),
+        _ => None,
+    })
+}
+
 impl PqNode {
     /// Create a new PqNode with the given configuration.
     pub fn new(config: &PqNodeConfig) -> Result<Self, PqP2pError> {
@@ -27,7 +35,10 @@ impl PqNode {
         let id_keys = transport::generate_transport_keypair();
         let peer_id = id_keys.public().to_peer_id();
 
-        let swarm = SwarmBuilder::with_existing_identity(id_keys)
+        let max_message_size = config.max_message_size;
+        let bootstrap_peers = config.bootstrap_peers.clone();
+
+        let mut swarm = SwarmBuilder::with_existing_identity(id_keys)
             .with_tokio()
             .with_tcp(
                 tcp::Config::new().nodelay(true),
@@ -47,6 +58,7 @@ impl PqNode {
                     relay_client,
                     config.relay_server_enabled,
                     config.max_relay_circuits,
+                    max_message_size,
                 )
             })
             .map_err(|e| PqP2pError::Io(std::io::Error::other(e.to_string())))?
@@ -55,6 +67,18 @@ impl PqNode {
                     .with_idle_connection_timeout(config.idle_connection_timeout)
             })
             .build();
+
+        // Add configured bootstrap peers to the Kademlia routing table.
+        for addr in &bootstrap_peers {
+            if let Some(peer) = extract_peer_id(addr) {
+                swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer, addr.clone());
+            } else {
+                tracing::warn!("bootstrap peer missing /p2p/ peer ID: {addr}");
+            }
+        }
 
         Ok(Self {
             swarm,
@@ -479,12 +503,10 @@ mod tests {
         let addr: Multiaddr = "/ip4/1.2.3.4/udp/4001/quic-v1".parse().unwrap();
         let result = node.listen_on_relay(addr);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("must include /p2p/")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must include /p2p/"));
     }
 
     #[tokio::test]

@@ -13,7 +13,17 @@ impl AsRef<[u8]> for X25519PublicKey {
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct X25519SecretKey(pub [u8; 32]);
+pub struct X25519SecretKey([u8; 32]);
+
+impl X25519SecretKey {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 pub struct X25519Kem;
 
@@ -26,7 +36,7 @@ impl KeyEncapsulation for X25519Kem {
         let public = PublicKey::from(&secret);
         (
             X25519PublicKey(*public.as_bytes()),
-            X25519SecretKey(secret.to_bytes()),
+            X25519SecretKey::from_bytes(secret.to_bytes()),
         )
     }
 
@@ -38,9 +48,13 @@ impl KeyEncapsulation for X25519Kem {
         let ephemeral_public = PublicKey::from(&ephemeral_secret);
         let pk_dalek = PublicKey::from(pk.0);
         let shared = ephemeral_secret.diffie_hellman(&pk_dalek);
+        let ss_bytes = shared.as_bytes();
+        if *ss_bytes == [0u8; 32] {
+            return Err(KemError::DecapsulationFailed);
+        }
         Ok((
             ephemeral_public.as_bytes().to_vec(),
-            SharedSecret::new(shared.as_bytes().to_vec()),
+            SharedSecret::new(ss_bytes.to_vec()),
         ))
     }
 
@@ -50,9 +64,13 @@ impl KeyEncapsulation for X25519Kem {
             got: ct.len(),
         })?;
         let ephemeral_public = PublicKey::from(ct_arr);
-        let secret = StaticSecret::from(sk.0);
+        let secret = StaticSecret::from(*sk.as_bytes());
         let shared = secret.diffie_hellman(&ephemeral_public);
-        Ok(SharedSecret::new(shared.as_bytes().to_vec()))
+        let ss_bytes = shared.as_bytes();
+        if *ss_bytes == [0u8; 32] {
+            return Err(KemError::DecapsulationFailed);
+        }
+        Ok(SharedSecret::new(ss_bytes.to_vec()))
     }
 }
 

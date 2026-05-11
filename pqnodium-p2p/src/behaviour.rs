@@ -32,6 +32,7 @@ pub struct PqBehaviour {
 
 impl PqBehaviour {
     /// Create a new PqBehaviour with all NAT traversal protocols and gossipsub.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         peer_id: PeerId,
         id_keys: &Keypair,
@@ -40,6 +41,7 @@ impl PqBehaviour {
         relay_client: relay::client::Behaviour,
         relay_server_enabled: bool,
         max_relay_circuits: usize,
+        max_message_size: usize,
     ) -> Self {
         let kad_config = {
             let mut cfg = KademliaConfig::default();
@@ -55,7 +57,7 @@ impl PqBehaviour {
         let gossipsub = gossipsub::Behaviour::new(
             MessageAuthenticity::Signed(id_keys.clone()),
             gossipsub::ConfigBuilder::default()
-                .max_transmit_size(4 * 1024 * 1024)
+                .max_transmit_size(max_message_size)
                 .build()
                 .expect("valid gossipsub config"),
         )
@@ -121,6 +123,7 @@ mod tests {
             relay_client,
             relay_server_enabled,
             16,
+            4 * 1024 * 1024,
         )
     }
 

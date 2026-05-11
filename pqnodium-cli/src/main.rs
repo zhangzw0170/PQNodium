@@ -125,7 +125,7 @@ fn save_identity(id: &Identity, path: &PathBuf) -> anyhow::Result<()> {
     let ed_pk = id.ed25519_public_key().as_ref();
     let ed_sk = id.ed25519_secret_key().as_ref();
     let ml_pk = id.mldsa65_public_key().as_ref();
-    let ml_sk = id.mldsa65_secret_key().as_ref();
+    let ml_sk = id.mldsa65_secret_key().secret_bytes();
 
     let mut data = Vec::new();
     data.extend_from_slice(IDENTITY_MAGIC);
@@ -237,24 +237,35 @@ fn load_or_generate_identity(path: &PathBuf) -> anyhow::Result<Identity> {
 
         let mut pos = IDENTITY_MAGIC.len();
 
-        let ed_pk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
-        pos += 4;
-        let ed_pk_bytes = key_data[pos..pos + ed_pk_len].to_vec();
-        pos += ed_pk_len;
+        let read_len_field = |pos: &mut usize, name: &str| -> anyhow::Result<usize> {
+            if key_data.len() < *pos + 4 {
+                anyhow::bail!("identity file truncated: cannot read {name} length at offset {pos}");
+            }
+            let len = u32::from_le_bytes(key_data[*pos..*pos + 4].try_into()?) as usize;
+            *pos += 4;
+            if key_data.len() < *pos + len {
+                anyhow::bail!("identity file truncated: {name} data ({len} bytes) exceeds file at offset {pos}");
+            }
+            Ok(len)
+        };
 
-        let ed_sk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
-        pos += 4;
-        let ed_sk_bytes = key_data[pos..pos + ed_sk_len].to_vec();
-        pos += ed_sk_len;
+        let read_bytes = |pos: &mut usize, len: usize| -> Vec<u8> {
+            let bytes = key_data[*pos..*pos + len].to_vec();
+            *pos += len;
+            bytes
+        };
 
-        let ml_pk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
-        pos += 4;
-        let ml_pk_bytes = key_data[pos..pos + ml_pk_len].to_vec();
-        pos += ml_pk_len;
+        let ed_pk_len = read_len_field(&mut pos, "ed25519_pk")?;
+        let ed_pk_bytes = read_bytes(&mut pos, ed_pk_len);
 
-        let ml_sk_len = u32::from_le_bytes(key_data[pos..pos + 4].try_into()?) as usize;
-        pos += 4;
-        let ml_sk_bytes = key_data[pos..pos + ml_sk_len].to_vec();
+        let ed_sk_len = read_len_field(&mut pos, "ed25519_sk")?;
+        let ed_sk_bytes = read_bytes(&mut pos, ed_sk_len);
+
+        let ml_pk_len = read_len_field(&mut pos, "ml_dsa65_pk")?;
+        let ml_pk_bytes = read_bytes(&mut pos, ml_pk_len);
+
+        let ml_sk_len = read_len_field(&mut pos, "ml_dsa65_sk")?;
+        let ml_sk_bytes = read_bytes(&mut pos, ml_sk_len);
 
         // Verify HMAC integrity before parsing keys
         let hmac_key = derive_hmac_key(&ed_sk_bytes, &ml_sk_bytes);
@@ -271,7 +282,7 @@ fn load_or_generate_identity(path: &PathBuf) -> anyhow::Result<Identity> {
             .ok_or_else(|| anyhow::anyhow!("invalid Ed25519 secret key"))?;
         let ml_pk = MlDsa65PublicKey::try_from_slice(&ml_pk_bytes)
             .ok_or_else(|| anyhow::anyhow!("invalid ML-DSA-65 public key"))?;
-        let ml_sk = MlDsa65SecretKey::try_from_slice(&ml_sk_bytes)
+        let ml_sk = MlDsa65SecretKey::try_from_slice(&ml_sk_bytes, &ml_pk_bytes)
             .ok_or_else(|| anyhow::anyhow!("invalid ML-DSA-65 secret key"))?;
 
         let id = Identity::from_keys(ed_pk, ed_sk, ml_pk, ml_sk);
@@ -364,10 +375,19 @@ async fn run_headless(mut node: PqNode, _local_peer_id: String) -> anyhow::Resul
                     }
                 }
                 PqEvent::NatStatus { is_public } => {
-                    info!("NAT status: {}", if is_public { "public" } else { "private" });
+                    info!(
+                        "NAT status: {}",
+                        if is_public { "public" } else { "private" }
+                    );
                 }
-                PqEvent::RelayReservation { relay_peer_id, accepted } => {
-                    info!("relay reservation {relay_peer_id}: {}", if accepted { "accepted" } else { "rejected" });
+                PqEvent::RelayReservation {
+                    relay_peer_id,
+                    accepted,
+                } => {
+                    info!(
+                        "relay reservation {relay_peer_id}: {}",
+                        if accepted { "accepted" } else { "rejected" }
+                    );
                 }
                 PqEvent::PeerDiscovered { peer_id, addresses } => {
                     let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();

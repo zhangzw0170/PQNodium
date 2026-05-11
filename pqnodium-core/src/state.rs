@@ -5,6 +5,7 @@ use crate::crypto::traits::aead::AeadCipher;
 use crate::crypto::traits::kem::{KemError, KeyEncapsulation, SharedSecret};
 use crate::identity::PublicIdentity;
 use rand_core::CryptoRngCore;
+use sha2::{Digest, Sha256};
 
 type PqHybridKem = HybridKem<X25519Kem, MlKem768Kem>;
 type PqHybridKemPk = HybridKemPublicKey<X25519Kem, MlKem768Kem>;
@@ -15,7 +16,6 @@ type PqHybridKemSk = <PqHybridKem as KeyEncapsulation>::SecretKey;
 pub enum HandshakeState {
     Idle,
     Initiated,
-    Responded,
     Completed,
     Closed,
 }
@@ -34,9 +34,31 @@ pub enum HandshakeError {
     NotCompleted,
     #[error("invalid handshake payload")]
     InvalidPayload,
+    #[error("nonce counter exhausted")]
+    NonceExhausted,
+    #[error("encryption error: {0}")]
+    Encryption(String),
+}
+
+/// Derive a 32-byte directional key from the shared secret and a label.
+fn derive_directional_key(shared_secret: &SharedSecret, label: &[u8]) -> SharedSecret {
+    let mut hasher = Sha256::new();
+    hasher.update(shared_secret.as_bytes());
+    hasher.update(label);
+    SharedSecret::new(hasher.finalize().to_vec())
+}
+
+/// Whether this session belongs to the initiator side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HandshakeRole {
+    Initiator,
+    Responder,
 }
 
 /// Session keys derived from the handshake.
+///
+/// Initiator: send_key = KDF(ss, "initiator-to-responder"), recv_key = KDF(ss, "responder-to-initiator")
+/// Responder: send_key = KDF(ss, "responder-to-initiator"), recv_key = KDF(ss, "initiator-to-responder")
 #[derive(Clone)]
 pub struct SessionKeys {
     pub send_key: SharedSecret,
@@ -46,48 +68,69 @@ pub struct SessionKeys {
 }
 
 impl SessionKeys {
-    pub fn next_send_nonce(&mut self) -> [u8; 12] {
+    fn new(shared_secret: SharedSecret, role: HandshakeRole) -> Self {
+        let initiator_to_responder =
+            derive_directional_key(&shared_secret, b"initiator-to-responder");
+        let responder_to_initiator =
+            derive_directional_key(&shared_secret, b"responder-to-initiator");
+        match role {
+            HandshakeRole::Initiator => Self {
+                send_key: initiator_to_responder,
+                recv_key: responder_to_initiator,
+                send_nonce: 0,
+                recv_nonce: 0,
+            },
+            HandshakeRole::Responder => Self {
+                send_key: responder_to_initiator,
+                recv_key: initiator_to_responder,
+                send_nonce: 0,
+                recv_nonce: 0,
+            },
+        }
+    }
+
+    pub fn next_send_nonce(&mut self) -> Result<[u8; 12], HandshakeError> {
+        if self.send_nonce == u64::MAX {
+            return Err(HandshakeError::NonceExhausted);
+        }
         let nonce = self.send_nonce;
         self.send_nonce += 1;
         let mut buf = [0u8; 12];
         buf[4..].copy_from_slice(&nonce.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
-    pub fn next_recv_nonce(&mut self) -> [u8; 12] {
+    pub fn next_recv_nonce(&mut self) -> Result<[u8; 12], HandshakeError> {
+        if self.recv_nonce == u64::MAX {
+            return Err(HandshakeError::NonceExhausted);
+        }
         let nonce = self.recv_nonce;
         self.recv_nonce += 1;
         let mut buf = [0u8; 12];
         buf[4..].copy_from_slice(&nonce.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
-    pub fn encrypt(
-        &mut self,
-        aad: &[u8],
-        plaintext: &[u8],
-    ) -> Result<Vec<u8>, crate::crypto::traits::aead::AeadError> {
-        let nonce = self.next_send_nonce();
+    pub fn encrypt(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, HandshakeError> {
+        let nonce = self.next_send_nonce()?;
         crate::crypto::backend::pqc::chacha20::ChaCha20Poly1305Cipher::encrypt(
             self.send_key.as_bytes(),
             &nonce,
             aad,
             plaintext,
         )
+        .map_err(|e| HandshakeError::Encryption(e.to_string()))
     }
 
-    pub fn decrypt(
-        &mut self,
-        aad: &[u8],
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, crate::crypto::traits::aead::AeadError> {
-        let nonce = self.next_recv_nonce();
+    pub fn decrypt(&mut self, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, HandshakeError> {
+        let nonce = self.next_recv_nonce()?;
         crate::crypto::backend::pqc::chacha20::ChaCha20Poly1305Cipher::decrypt(
             self.recv_key.as_bytes(),
             &nonce,
             aad,
             ciphertext,
         )
+        .map_err(|e| HandshakeError::Encryption(e.to_string()))
     }
 }
 
@@ -183,12 +226,7 @@ impl HandshakeSession {
         // Encapsulate to initiator's PK → both sides will derive the same ss
         let (hybrid_ct, shared_secret) = PqHybridKem::encapsulate(&initiator_pk, rng)?;
 
-        self.session_keys = Some(SessionKeys {
-            send_key: shared_secret.clone(),
-            recv_key: shared_secret,
-            send_nonce: 0,
-            recv_nonce: 0,
-        });
+        self.session_keys = Some(SessionKeys::new(shared_secret, HandshakeRole::Responder));
         self.state = HandshakeState::Completed;
 
         // Encode: resp_pk(32+1184) || hybrid_ct(1122)
@@ -223,12 +261,7 @@ impl HandshakeSession {
             .ok_or(HandshakeError::NotCompleted)?;
         let shared_secret = PqHybridKem::decapsulate(&sk, hybrid_ct)?;
 
-        self.session_keys = Some(SessionKeys {
-            send_key: shared_secret.clone(),
-            recv_key: shared_secret,
-            send_nonce: 0,
-            recv_nonce: 0,
-        });
+        self.session_keys = Some(SessionKeys::new(shared_secret, HandshakeRole::Initiator));
         self.state = HandshakeState::Completed;
 
         drop(sk);
@@ -313,15 +346,23 @@ mod tests {
 
     #[test]
     fn nonce_monotonic() {
-        let mut keys = SessionKeys {
-            send_key: SharedSecret::new(vec![0u8; 32]),
-            recv_key: SharedSecret::new(vec![0u8; 32]),
-            send_nonce: 0,
-            recv_nonce: 0,
-        };
-        let n1 = keys.next_send_nonce();
-        let n2 = keys.next_send_nonce();
+        let mut keys = SessionKeys::new(SharedSecret::new(vec![0u8; 32]), HandshakeRole::Initiator);
+        let n1 = keys.next_send_nonce().unwrap();
+        let n2 = keys.next_send_nonce().unwrap();
         assert_ne!(n1, n2);
+    }
+
+    #[test]
+    fn directional_keys_differ() {
+        let ss = SharedSecret::new(vec![42u8; 32]);
+        let init_keys = SessionKeys::new(ss.clone(), HandshakeRole::Initiator);
+        let resp_keys = SessionKeys::new(ss, HandshakeRole::Responder);
+        // Initiator's send_key matches Responder's recv_key
+        assert_eq!(init_keys.send_key.as_bytes(), resp_keys.recv_key.as_bytes());
+        // Initiator's recv_key matches Responder's send_key
+        assert_eq!(init_keys.recv_key.as_bytes(), resp_keys.send_key.as_bytes());
+        // send_key != recv_key (no nonce reuse)
+        assert_ne!(init_keys.send_key.as_bytes(), init_keys.recv_key.as_bytes());
     }
 
     #[test]
@@ -367,12 +408,21 @@ mod tests {
         let aad = b"test_context";
         let plaintext = b"secret post-quantum message";
 
+        // Initiator → Responder
         let ct = initiator
             .session_keys_mut()
             .encrypt(aad, plaintext)
             .unwrap();
         let pt = responder.session_keys_mut().decrypt(aad, &ct).unwrap();
         assert_eq!(pt, plaintext);
+
+        // Responder → Initiator (different direction key, same nonce space)
+        let ct2 = responder
+            .session_keys_mut()
+            .encrypt(aad, plaintext)
+            .unwrap();
+        let pt2 = initiator.session_keys_mut().decrypt(aad, &ct2).unwrap();
+        assert_eq!(pt2, plaintext);
     }
 
     #[test]
@@ -393,8 +443,10 @@ mod tests {
         let rk = responder.session_keys().unwrap();
         assert_eq!(ik.send_key.as_bytes().len(), 32);
         assert_eq!(rk.recv_key.as_bytes().len(), 32);
-        // Both sides must derive the SAME shared secret
-        assert_eq!(ik.send_key.as_bytes(), rk.send_key.as_bytes());
+        // Initiator's send_key must match Responder's recv_key
+        assert_eq!(ik.send_key.as_bytes(), rk.recv_key.as_bytes());
+        // Initiator's recv_key must match Responder's send_key
+        assert_eq!(ik.recv_key.as_bytes(), rk.send_key.as_bytes());
     }
 
     #[test]

@@ -31,8 +31,7 @@ impl Envelope {
 
     pub fn encode(&self) -> Vec<u8> {
         let sender_bytes = self.sender_id.as_bytes();
-        let mut buf =
-            Vec::with_capacity(1 + 8 + 2 + sender_bytes.len() + 4 + self.payload.len());
+        let mut buf = Vec::with_capacity(1 + 8 + 2 + sender_bytes.len() + 4 + self.payload.len());
         buf.push(ENVELOPE_VERSION);
         buf.extend_from_slice(&self.timestamp_ms.to_le_bytes());
         buf.extend_from_slice(&(sender_bytes.len() as u16).to_be_bytes());

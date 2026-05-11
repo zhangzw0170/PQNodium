@@ -26,25 +26,35 @@ impl AsRef<[u8]> for MlDsa65PublicKey {
     }
 }
 
+/// ML-DSA-65 secret key. Internally stores both secret and public key bytes
+/// because `crystals-dilithium` requires a `Keypair` (not just `SecretKey`) for signing.
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct MlDsa65SecretKey(Vec<u8>);
-
-impl MlDsa65SecretKey {
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self(bytes)
-    }
-
-    pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
-        if bytes.is_empty() {
-            return None;
-        }
-        Some(Self(bytes.to_vec()))
-    }
+pub struct MlDsa65SecretKey {
+    secret: Vec<u8>,
+    public: Vec<u8>,
 }
 
-impl AsRef<[u8]> for MlDsa65SecretKey {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
+impl MlDsa65SecretKey {
+    pub fn from_bytes(secret: Vec<u8>, public: Vec<u8>) -> Self {
+        Self { secret, public }
+    }
+
+    pub fn try_from_slice(secret: &[u8], public: &[u8]) -> Option<Self> {
+        if secret.is_empty() || public.is_empty() {
+            return None;
+        }
+        Some(Self {
+            secret: secret.to_vec(),
+            public: public.to_vec(),
+        })
+    }
+
+    pub fn secret_bytes(&self) -> &[u8] {
+        &self.secret
+    }
+
+    pub fn public_bytes(&self) -> &[u8] {
+        &self.public
     }
 }
 
@@ -68,18 +78,18 @@ impl Signer for MlDsa65Signer {
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
         let kp = Keypair::generate(Some(&seed)).expect("seed length is always 32");
+        let pk_bytes = kp.public.to_bytes().to_vec();
+        let sk_bytes = kp.secret.to_bytes().to_vec();
         (
-            MlDsa65PublicKey(kp.public.to_bytes().to_vec()),
-            MlDsa65SecretKey(kp.secret.to_bytes().to_vec()),
+            MlDsa65PublicKey(pk_bytes.clone()),
+            MlDsa65SecretKey::from_bytes(sk_bytes, pk_bytes),
         )
     }
 
     fn sign(sk: &Self::SecretKey, msg: &[u8]) -> Self::Signature {
-        let sk = SecretKey::from_bytes(&sk.0).expect("secret key bytes valid");
-        let kp = Keypair {
-            secret: sk,
-            public: PublicKey::from_bytes(&[0u8; 1952]).unwrap(),
-        };
+        let secret = SecretKey::from_bytes(sk.secret_bytes()).expect("secret key bytes valid");
+        let public = PublicKey::from_bytes(sk.public_bytes()).expect("public key bytes valid");
+        let kp = Keypair { secret, public };
         let sig = kp
             .sign(msg, None, RandomMode::Deterministic)
             .expect("signing should succeed");
