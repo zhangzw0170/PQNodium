@@ -22,9 +22,20 @@ All HIGH and MEDIUM risks have been fixed or accepted:
 |----|------|-------|--------|
 | RISK-001 | Dependency supply chain | 0 | ✅ Mitigated — `cargo audit` CI |
 | RISK-101 | Transport handshake not using HybridKem | 1 | ✅ Fixed — app-layer handshake uses HybridKem |
+| RISK-102 | SessionKeys reuse same key for both directions | 1 | ✅ Fixed — directional key derivation via KDF(ss, label) |
+| RISK-103 | ML-DSA-65 sign uses empty public key | 1 | ✅ Fixed — MlDsa65SecretKey stores both secret and public bytes |
+| RISK-104 | X25519 no all-zero shared secret check | 1 | ✅ Fixed — encapsulate/decapsulate reject degenerate results |
+| RISK-105 | X25519 SecretKey public field | 1 | ✅ Fixed — private field with from_bytes()/as_bytes() accessors |
+| RISK-106 | Nonce wrap-around protection | 1 | ✅ Fixed — u64 overflow check in next_send_nonce/next_recv_nonce |
+| RISK-107 | ML-DSA-65 no key length validation | 1 | ✅ Fixed — try_from_slice enforces FIPS 204 sizes |
+| RISK-108 | HybridSig AsRef returns empty slice | 1 | ✅ Fixed — pre-computed encoding stored in struct |
+| RISK-109 | SessionKeys fields publicly mutable | 1 | ✅ Fixed — private fields with send_key()/recv_key() accessors |
+| RISK-110 | Envelope decode accepts trailing data | 6 | ✅ Fixed — EnvelopeError::TrailingData |
 | RISK-203 | No identity binding (Ed25519 ↔ ML-DSA-65) | 2 | ✅ Fixed — PeerId binds both keys |
 | RISK-201 | Unwrap in transport construction | 2 | ✅ Fixed |
 | RISK-202 | No rate limiting on P2P connections | 2 | ✅ Fixed — max 128 incoming |
+| RISK-205 | Config values silently discarded | 2 | ✅ Fixed — max_message_size wired to Gossipsub, bootstrap peers to Kademlia |
+| RISK-206 | Identity file parsing panics on truncated input | 3 | ✅ Fixed — bounded read_len_field/read_bytes closures |
 | RISK-301 | Identity file lacks permission controls | 3 | ✅ Fixed — 0600/ACL |
 | RISK-302 | Identity file lacks integrity protection | 3 | ✅ Fixed — HMAC-SHA256 |
 | RISK-401 | IPC handlers lack input validation | 3b | ✅ Fixed — `validate_string_input` |
@@ -38,10 +49,9 @@ All HIGH and MEDIUM risks have been fixed or accepted:
 
 | ID | Risk | Phase |
 |----|------|-------|
-| RISK-106 | Nonce wrap-around protection | 1 |
-| RISK-107 | No key rotation mechanism | 1 |
+| RISK-108 | No key rotation mechanism | 1 |
 | RISK-109 | No FIPS 203/204 KAT vectors | 1 |
-| RISK-206 | DHT bootstrap hardcoded peers | 2 |
+| RISK-210 | DHT bootstrap hardcoded peers | 2 |
 | RISK-304 | No secure stdin for passphrase | 3 |
 | RISK-305 | Multiaddr bootstrap silently dropped (Git Bash/MSYS2) | 3 |
 | RISK-306 | UFW blocks P2P listening port | 3 |
@@ -49,6 +59,9 @@ All HIGH and MEDIUM risks have been fixed or accepted:
 | RISK-405 | Sensitive data exposure to frontend | 3b |
 | RISK-802 | Dedup TTL too short (5 min) | 5-8 |
 | RISK-805 | LRU dedup eviction under memory pressure | 5-8 |
+| RISK-901 | TUI monolith (1304 lines, >800 line standard) | 3 |
+| RISK-902 | CI test matrix only covers Windows | CI |
+| RISK-903 | 20 cargo audit ignores without justification | CI |
 
 ## How to Use
 

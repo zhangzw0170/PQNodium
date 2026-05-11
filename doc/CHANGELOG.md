@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connection limits: max 128 incoming connections.
 - 8-node local P2P integration test suite (10 tests).
 - Gossipsub integration test suite (4 tests).
-- Total: 193 tests passing across all suites.
+- Total: 194 tests passing across all suites.
 - CI workflows: lint, test, build, audit.
 
 ### Changed
@@ -36,6 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TUI plain text input now publishes via Gossipsub broadcast (was no-op before Phase 5).
 
 ### Fixed
+- **Security audit**: directional key derivation for `SessionKeys` — send/recv keys now derived via `KDF(ss, "initiator-to-responder")` / `KDF(ss, "responder-to-initiator")`, preventing catastrophic nonce reuse in bidirectional communication.
+- **Security audit**: ML-DSA-65 signing now uses real public key — `MlDsa65SecretKey` stores both secret and public key bytes (crystals-dilithium requires a `Keypair` for signing).
+- **Security audit**: X25519 all-zero shared secret detection — both `encapsulate()` and `decapsulate()` reject degenerate Diffie-Hellman results.
+- **Security audit**: X25519 `SecretKey` field privatization — inner `[u8; 32]` now private with `from_bytes()`/`as_bytes()` accessors.
+- **Security audit**: Bounded identity file parsing — replaces unsafe direct slice indexing with length-checked closures to prevent panics on crafted/truncated files.
+- **Security audit**: Config values wired to actual usage — `max_message_size` passed to Gossipsub behaviour, bootstrap peers added to Kademlia routing table on node creation.
+- **Correctness**: `HybridSigPublicKey`/`HybridSignature` `AsRef<[u8]>` now returns actual encoded bytes instead of empty slice.
+- **Correctness**: ML-DSA-65 `try_from_slice()` enforces FIPS 204 key sizes (pk=1952 bytes, sk=4032 bytes).
+- **Correctness**: `SessionKeys` fields privatized with `send_key()`/`recv_key()` accessors.
+- **Correctness**: `Envelope::decode()` now rejects trailing data via `EnvelopeError::TrailingData`.
 - `connected_peers` HashMap not cleaned up on peer disconnect (memory leak + stale data).
 - `GetClosestPeers` results incorrectly treated as connected peers in `/peers`.
 - `listen_on_relay` now validates input contains `/p2p/{peer_id}` and uses Multiaddr builder API.

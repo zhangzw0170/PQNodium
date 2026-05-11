@@ -67,7 +67,7 @@ Four public modules: `crypto`, `identity`, `message`, `state`, plus `envelope` f
 - Round 1 (Initiator → Responder): `[x25519_pk: 32][ml_kem_pk: 1184]` = 1216 bytes
 - Round 2 (Responder → Initiator): `[resp_pk: 1216][hybrid_ct: 1122]` = 2338 bytes
 - States: `Idle → Initiated → Completed` (initiator) or `Idle → Completed` (responder)
-- After completion, `SessionKeys` provides `encrypt`/`decrypt` via ChaCha20Poly1305 with monotonic nonce counters
+- After completion, `SessionKeys` provides `encrypt`/`decrypt` via ChaCha20Poly1305 with directional keys (`send_key`/`recv_key`) derived via `KDF(ss, "initiator-to-responder")` / `KDF(ss, "responder-to-initiator")` and monotonic nonce counters with u64 overflow protection. Fields are private — use `send_key()`/`recv_key()` accessors.
 
 **Message wire format** (`message.rs`): 8-byte header `[version:1][type:1][reserved:2][payload_len:4 BE]` + `[nonce:12]` + `[ciphertext]`. Types: `HandshakeInit(0x01)`, `HandshakeResponse(0x02)`, `HandshakeComplete(0x03)`, `Data(0x10)`, `Ack(0x11)`.
 

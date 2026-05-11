@@ -44,7 +44,7 @@ cargo build --release -p pqnodium-cli
 cargo tauri dev
 
 # 测试 / Test
-cargo test                                     # 全部测试 (193 tests)
+cargo test                                     # 全部测试 (194 tests)
 cargo test --test gossipsub_messaging          # Gossipsub 集成测试
 ```
 

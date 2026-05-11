@@ -54,7 +54,7 @@ Content hash: `SHA-256(version || timestamp_ms || sender_id || payload)`
 
 ## Test Results
 
-- `cargo test`: 193 passed (all suites)
+- `cargo test`: 194 passed (all suites)
 - `cargo clippy -- -D warnings`: clean
 - Integration tests: 10/10 (eight_node_mesh) + 4/4 (gossipsub_messaging)
 
