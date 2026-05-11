@@ -6,6 +6,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub struct HybridSigPublicKey<S1: Signer, S2: Signer> {
     pub classic: S1::PublicKey,
     pub pqc: S2::PublicKey,
+    encoded: Vec<u8>,
 }
 
 impl<S1: Signer, S2: Signer> Clone for HybridSigPublicKey<S1, S2> {
@@ -13,13 +14,14 @@ impl<S1: Signer, S2: Signer> Clone for HybridSigPublicKey<S1, S2> {
         Self {
             classic: self.classic.clone(),
             pqc: self.pqc.clone(),
+            encoded: self.encoded.clone(),
         }
     }
 }
 
 impl<S1: Signer, S2: Signer> AsRef<[u8]> for HybridSigPublicKey<S1, S2> {
     fn as_ref(&self) -> &[u8] {
-        &[]
+        &self.encoded
     }
 }
 
@@ -34,6 +36,7 @@ pub struct HybridSigSecretKey<S1: Signer, S2: Signer> {
 pub struct HybridSignature<S1: Signer, S2: Signer> {
     pub classic: S1::Signature,
     pub pqc: S2::Signature,
+    pub(crate) encoded: Vec<u8>,
 }
 
 impl<S1: Signer, S2: Signer> Clone for HybridSignature<S1, S2> {
@@ -41,13 +44,14 @@ impl<S1: Signer, S2: Signer> Clone for HybridSignature<S1, S2> {
         Self {
             classic: self.classic.clone(),
             pqc: self.pqc.clone(),
+            encoded: self.encoded.clone(),
         }
     }
 }
 
 impl<S1: Signer, S2: Signer> AsRef<[u8]> for HybridSignature<S1, S2> {
     fn as_ref(&self) -> &[u8] {
-        &[]
+        &self.encoded
     }
 }
 
@@ -64,10 +68,12 @@ impl<S1: Signer, S2: Signer> Signer for HybridSigner<S1, S2> {
     fn keygen<R: CryptoRngCore>(rng: &mut R) -> (Self::PublicKey, Self::SecretKey) {
         let (pk1, sk1) = S1::keygen(rng);
         let (pk2, sk2) = S2::keygen(rng);
+        let pk_encoded = encode_hybrid_pk::<S1, S2>(&pk1, &pk2);
         (
             HybridSigPublicKey {
                 classic: pk1,
                 pqc: pk2,
+                encoded: pk_encoded,
             },
             HybridSigSecretKey {
                 classic: sk1,
@@ -79,9 +85,11 @@ impl<S1: Signer, S2: Signer> Signer for HybridSigner<S1, S2> {
     fn sign(sk: &Self::SecretKey, msg: &[u8]) -> Self::Signature {
         let classic_sig = S1::sign(&sk.classic, msg);
         let pqc_sig = S2::sign(&sk.pqc, msg);
+        let encoded = encode_hybrid_sig::<S1, S2>(&classic_sig, &pqc_sig);
         HybridSignature {
             classic: classic_sig,
             pqc: pqc_sig,
+            encoded,
         }
     }
 
@@ -93,16 +101,36 @@ impl<S1: Signer, S2: Signer> Signer for HybridSigner<S1, S2> {
 impl<S1: Signer, S2: Signer> HybridSignature<S1, S2> {
     /// Encode: classic_sig_len (2B LE) || classic_sig || pqc_sig
     pub fn to_bytes(&self) -> Vec<u8> {
-        let classic_bytes = self.classic.as_ref();
-        let pqc_bytes = self.pqc.as_ref();
-        let classic_len = classic_bytes.len() as u16;
-
-        let mut out = Vec::with_capacity(2 + classic_bytes.len() + pqc_bytes.len());
-        out.extend_from_slice(&classic_len.to_le_bytes());
-        out.extend_from_slice(classic_bytes);
-        out.extend_from_slice(pqc_bytes);
-        out
+        self.encoded.clone()
     }
+}
+
+fn encode_hybrid_pk<S1: Signer, S2: Signer>(
+    classic: &S1::PublicKey,
+    pqc: &S2::PublicKey,
+) -> Vec<u8> {
+    let classic_bytes = classic.as_ref();
+    let pqc_bytes = pqc.as_ref();
+    let classic_len = classic_bytes.len() as u16;
+    let mut out = Vec::with_capacity(2 + classic_bytes.len() + pqc_bytes.len());
+    out.extend_from_slice(&classic_len.to_le_bytes());
+    out.extend_from_slice(classic_bytes);
+    out.extend_from_slice(pqc_bytes);
+    out
+}
+
+pub fn encode_hybrid_sig<S1: Signer, S2: Signer>(
+    classic: &S1::Signature,
+    pqc: &S2::Signature,
+) -> Vec<u8> {
+    let classic_bytes = classic.as_ref();
+    let pqc_bytes = pqc.as_ref();
+    let classic_len = classic_bytes.len() as u16;
+    let mut out = Vec::with_capacity(2 + classic_bytes.len() + pqc_bytes.len());
+    out.extend_from_slice(&classic_len.to_le_bytes());
+    out.extend_from_slice(classic_bytes);
+    out.extend_from_slice(pqc_bytes);
+    out
 }
 
 #[cfg(test)]

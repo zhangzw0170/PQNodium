@@ -90,6 +90,14 @@ impl Envelope {
         }
         let payload = data[payload_start..payload_start + payload_len].to_vec();
 
+        let consumed = payload_start + payload_len;
+        if data.len() > consumed {
+            return Err(EnvelopeError::TrailingData {
+                actual: data.len(),
+                consumed,
+            });
+        }
+
         Ok(Self {
             timestamp_ms,
             sender_id,
@@ -115,6 +123,8 @@ pub enum EnvelopeError {
     UnknownVersion(u8),
     #[error("invalid sender ID (non-UTF8)")]
     InvalidSenderId,
+    #[error("trailing data: envelope is {actual} bytes but only {consumed} were expected")]
+    TrailingData { actual: usize, consumed: usize },
 }
 
 #[cfg(test)]

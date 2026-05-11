@@ -4,6 +4,9 @@ use crystals_dilithium::RandomMode;
 use rand_core::CryptoRngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+const ML_DSA_65_PK_SIZE: usize = 1952;
+const ML_DSA_65_SK_SIZE: usize = 4032;
+
 #[derive(Clone)]
 pub struct MlDsa65PublicKey(Vec<u8>);
 
@@ -13,7 +16,7 @@ impl MlDsa65PublicKey {
     }
 
     pub fn try_from_slice(bytes: &[u8]) -> Option<Self> {
-        if bytes.is_empty() {
+        if bytes.len() != ML_DSA_65_PK_SIZE {
             return None;
         }
         Some(Self(bytes.to_vec()))
@@ -40,7 +43,7 @@ impl MlDsa65SecretKey {
     }
 
     pub fn try_from_slice(secret: &[u8], public: &[u8]) -> Option<Self> {
-        if secret.is_empty() || public.is_empty() {
+        if secret.len() != ML_DSA_65_SK_SIZE || public.len() != ML_DSA_65_PK_SIZE {
             return None;
         }
         Some(Self {

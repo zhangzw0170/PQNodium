@@ -61,10 +61,10 @@ pub enum HandshakeRole {
 /// Responder: send_key = KDF(ss, "responder-to-initiator"), recv_key = KDF(ss, "initiator-to-responder")
 #[derive(Clone)]
 pub struct SessionKeys {
-    pub send_key: SharedSecret,
-    pub recv_key: SharedSecret,
-    pub send_nonce: u64,
-    pub recv_nonce: u64,
+    send_key: SharedSecret,
+    recv_key: SharedSecret,
+    send_nonce: u64,
+    recv_nonce: u64,
 }
 
 impl SessionKeys {
@@ -87,6 +87,14 @@ impl SessionKeys {
                 recv_nonce: 0,
             },
         }
+    }
+
+    pub fn send_key(&self) -> &SharedSecret {
+        &self.send_key
+    }
+
+    pub fn recv_key(&self) -> &SharedSecret {
+        &self.recv_key
     }
 
     pub fn next_send_nonce(&mut self) -> Result<[u8; 12], HandshakeError> {
@@ -358,11 +366,20 @@ mod tests {
         let init_keys = SessionKeys::new(ss.clone(), HandshakeRole::Initiator);
         let resp_keys = SessionKeys::new(ss, HandshakeRole::Responder);
         // Initiator's send_key matches Responder's recv_key
-        assert_eq!(init_keys.send_key.as_bytes(), resp_keys.recv_key.as_bytes());
+        assert_eq!(
+            init_keys.send_key().as_bytes(),
+            resp_keys.recv_key().as_bytes()
+        );
         // Initiator's recv_key matches Responder's send_key
-        assert_eq!(init_keys.recv_key.as_bytes(), resp_keys.send_key.as_bytes());
+        assert_eq!(
+            init_keys.recv_key().as_bytes(),
+            resp_keys.send_key().as_bytes()
+        );
         // send_key != recv_key (no nonce reuse)
-        assert_ne!(init_keys.send_key.as_bytes(), init_keys.recv_key.as_bytes());
+        assert_ne!(
+            init_keys.send_key().as_bytes(),
+            init_keys.recv_key().as_bytes()
+        );
     }
 
     #[test]
@@ -441,12 +458,12 @@ mod tests {
 
         let ik = initiator.session_keys().unwrap();
         let rk = responder.session_keys().unwrap();
-        assert_eq!(ik.send_key.as_bytes().len(), 32);
-        assert_eq!(rk.recv_key.as_bytes().len(), 32);
+        assert_eq!(ik.send_key().as_bytes().len(), 32);
+        assert_eq!(rk.recv_key().as_bytes().len(), 32);
         // Initiator's send_key must match Responder's recv_key
-        assert_eq!(ik.send_key.as_bytes(), rk.recv_key.as_bytes());
+        assert_eq!(ik.send_key().as_bytes(), rk.recv_key().as_bytes());
         // Initiator's recv_key must match Responder's send_key
-        assert_eq!(ik.recv_key.as_bytes(), rk.send_key.as_bytes());
+        assert_eq!(ik.recv_key().as_bytes(), rk.send_key().as_bytes());
     }
 
     #[test]
@@ -466,8 +483,8 @@ mod tests {
         let reply2 = resp2.respond(&mut OsRng, &pk2, id_a.public()).unwrap();
         init2.complete_as_initiator(&reply2).unwrap();
 
-        let k1 = init1.session_keys().unwrap().send_key.as_bytes().to_vec();
-        let k2 = init2.session_keys().unwrap().send_key.as_bytes().to_vec();
+        let k1 = init1.session_keys().unwrap().send_key().as_bytes().to_vec();
+        let k2 = init2.session_keys().unwrap().send_key().as_bytes().to_vec();
         assert_ne!(k1, k2);
     }
 

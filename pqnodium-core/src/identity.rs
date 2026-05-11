@@ -107,9 +107,14 @@ impl Identity {
     pub fn sign(&self, msg: &[u8]) -> HybridSignature<Ed25519Signer, MlDsa65Signer> {
         let classic_sig = Ed25519Signer::sign(&self.ed25519_sk, msg);
         let pqc_sig = MlDsa65Signer::sign(&self.mldsa65_sk, msg);
+        let encoded = crate::crypto::hybrid::hybrid_sig::encode_hybrid_sig::<
+            Ed25519Signer,
+            MlDsa65Signer,
+        >(&classic_sig, &pqc_sig);
         HybridSignature {
             classic: classic_sig,
             pqc: pqc_sig,
+            encoded,
         }
     }
 
