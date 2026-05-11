@@ -1,152 +1,22 @@
+pub mod command;
+pub mod render;
+
 use libp2p::Multiaddr;
 use pqnodium_core::envelope::Envelope;
 use pqnodium_p2p::event::PqEvent;
-use std::collections::HashSet;
-
-const MAX_DEDUP_MESSAGES: usize = 10000;
-
 use pqnodium_p2p::node::PqNode;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 use ratatui::DefaultTerminal;
+use std::collections::HashSet;
 use std::io;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
-// ── Color Palette (True Color) ─────────────────────────────────────────
+use command::{event_to_log, handle_command_result, shorten_peer_id, submit_input};
+use render::LogEntry;
 
-mod palette {
-    use ratatui::style::Color;
-
-    pub const BG: Color = Color::Rgb(18, 18, 26);
-    pub const BORDER: Color = Color::Rgb(60, 60, 90);
-    pub const BORDER_BRIGHT: Color = Color::Rgb(100, 100, 140);
-
-    pub const TEXT: Color = Color::Rgb(210, 210, 230);
-    pub const TEXT_DIM: Color = Color::Rgb(110, 110, 140);
-    pub const TEXT_MUTED: Color = Color::Rgb(75, 75, 100);
-
-    pub const ACCENT: Color = Color::Rgb(120, 160, 255);
-    pub const GREEN: Color = Color::Rgb(80, 220, 160);
-    pub const YELLOW: Color = Color::Rgb(255, 200, 80);
-    pub const RED: Color = Color::Rgb(255, 100, 100);
-    pub const PURPLE: Color = Color::Rgb(180, 140, 255);
-
-    pub const INPUT_BG: Color = Color::Rgb(26, 26, 38);
-    pub const STATUS_BG: Color = Color::Rgb(22, 22, 34);
-}
-
-// ── Types ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-enum LogLevel {
-    Info,
-    Success,
-    Warn,
-    Error,
-}
-
-impl LogLevel {
-    fn icon(&self) -> &'static str {
-        match self {
-            LogLevel::Info => "●",
-            LogLevel::Success => "✓",
-            LogLevel::Warn => "⚠",
-            LogLevel::Error => "✗",
-        }
-    }
-
-    fn icon_color(&self) -> Color {
-        match self {
-            LogLevel::Info => palette::ACCENT,
-            LogLevel::Success => palette::GREEN,
-            LogLevel::Warn => palette::YELLOW,
-            LogLevel::Error => palette::RED,
-        }
-    }
-
-    fn text_style(&self) -> Style {
-        match self {
-            LogLevel::Info => Style::default().fg(palette::TEXT),
-            LogLevel::Success => Style::default().fg(palette::GREEN),
-            LogLevel::Warn => Style::default().fg(palette::YELLOW),
-            LogLevel::Error => Style::default()
-                .fg(palette::RED)
-                .add_modifier(Modifier::BOLD),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct LogEntry {
-    timestamp: String,
-    text: String,
-    level: LogLevel,
-}
-
-impl LogEntry {
-    fn info(text: impl Into<String>) -> Self {
-        Self {
-            timestamp: now_timestamp(),
-            text: text.into(),
-            level: LogLevel::Info,
-        }
-    }
-
-    fn success(text: impl Into<String>) -> Self {
-        Self {
-            timestamp: now_timestamp(),
-            text: text.into(),
-            level: LogLevel::Success,
-        }
-    }
-
-    fn warn(text: impl Into<String>) -> Self {
-        Self {
-            timestamp: now_timestamp(),
-            text: text.into(),
-            level: LogLevel::Warn,
-        }
-    }
-
-    fn error(text: impl Into<String>) -> Self {
-        Self {
-            timestamp: now_timestamp(),
-            text: text.into(),
-            level: LogLevel::Error,
-        }
-    }
-
-    fn to_line(&self) -> Line<'static> {
-        Line::from(vec![
-            Span::styled(
-                format!(" {} ", self.timestamp),
-                Style::default().fg(palette::TEXT_MUTED),
-            ),
-            Span::styled(
-                format!("{} ", self.level.icon()),
-                Style::default().fg(self.level.icon_color()),
-            ),
-            Span::styled(self.text.clone(), self.level.text_style()),
-        ])
-    }
-}
-
-fn now_timestamp() -> String {
-    use std::time::SystemTime;
-    let d = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = d.as_secs() % 86400;
-    let h = (secs / 3600) as u8;
-    let m = ((secs % 3600) / 60) as u8;
-    let s = (secs % 60) as u8;
-    format!("{h:02}:{m:02}:{s:02}")
-}
+const MAX_DEDUP_MESSAGES: usize = 10000;
 
 // ── App State ──────────────────────────────────────────────────────────
 
@@ -203,14 +73,6 @@ impl AppState {
 
     fn push_error(&mut self, text: impl Into<String>) {
         self.push_log(LogEntry::error(text));
-    }
-}
-
-fn shorten_peer_id(id: &str) -> String {
-    if id.len() > 20 {
-        format!("{}…{}", &id[..12], &id[id.len() - 5..])
-    } else {
-        id.to_string()
     }
 }
 
@@ -322,257 +184,6 @@ async fn handle_node_command(
     }
 }
 
-// ── Command dispatch from TUI input ────────────────────────────────────
-
-fn submit_input(input: &str, state: &mut AppState, cmd_tx: &mpsc::UnboundedSender<NodeCommand>) {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-
-    if trimmed == "/quit" || trimmed == "/exit" {
-        state.should_quit = true;
-        return;
-    }
-
-    if trimmed == "/clear" {
-        state.logs.clear();
-        state.scroll_offset = 0;
-        return;
-    }
-
-    if trimmed == "/id" {
-        let (tx, rx) = oneshot::channel();
-        if cmd_tx.send(NodeCommand::GetPeerId(tx)).is_ok() {
-            tokio::spawn(async move {
-                if let Ok(peer_id) = rx.await {
-                    if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ =
-                            tx.send(AppMessage::CommandResponse(CommandResult::PeerId(peer_id)));
-                    }
-                }
-            });
-        }
-        return;
-    }
-
-    if trimmed == "/peers" {
-        let (tx, rx) = oneshot::channel();
-        if cmd_tx.send(NodeCommand::GetConnectedPeers(tx)).is_ok() {
-            tokio::spawn(async move {
-                if let Ok(peers) = rx.await {
-                    if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(
-                            CommandResult::ConnectedPeers(peers),
-                        ));
-                    }
-                }
-            });
-        }
-        return;
-    }
-
-    if trimmed == "/listeners" {
-        let (tx, rx) = oneshot::channel();
-        if cmd_tx.send(NodeCommand::GetListeners(tx)).is_ok() {
-            tokio::spawn(async move {
-                if let Ok(listeners) = rx.await {
-                    if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::Listeners(
-                            listeners,
-                        )));
-                    }
-                }
-            });
-        }
-        return;
-    }
-
-    if trimmed == "/nat" {
-        state.push_info("NAT status is reported automatically via AutoNAT events");
-        return;
-    }
-
-    if let Some(addr_str) = trimmed.strip_prefix("/relay ") {
-        let addr = addr_str.trim().to_string();
-        let (tx, rx) = oneshot::channel();
-        if cmd_tx.send(NodeCommand::ListenOnRelay(addr, tx)).is_ok() {
-            tokio::spawn(async move {
-                if let Ok(result) = rx.await {
-                    if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::RelayResult(
-                            result,
-                        )));
-                    }
-                }
-            });
-        }
-        return;
-    }
-
-    if let Some(addr_str) = trimmed.strip_prefix("/dial ") {
-        let addr = addr_str.to_string();
-        let (tx, rx) = oneshot::channel();
-        if cmd_tx.send(NodeCommand::Dial(addr, tx)).is_ok() {
-            tokio::spawn(async move {
-                if let Ok(result) = rx.await {
-                    if let Some(tx) = crate::tui::global_msg_tx() {
-                        let _ = tx.send(AppMessage::CommandResponse(CommandResult::DialResult(
-                            result,
-                        )));
-                    }
-                }
-            });
-        }
-        return;
-    }
-
-    if trimmed.starts_with("/help") || trimmed == "/?" {
-        let commands = [
-            ("<message>", "Broadcast a text message"),
-            ("/id", "Show local peer ID"),
-            ("/peers", "Show connected peers"),
-            ("/listeners", "Show listening addresses"),
-            ("/dial <addr>", "Dial a peer"),
-            ("/relay <addr>", "Listen via relay"),
-            ("/nat", "Show NAT status info"),
-            ("/clear", "Clear log panel"),
-            ("/quit", "Exit"),
-        ];
-        state.push_info("Commands:");
-        for (cmd, desc) in &commands {
-            state.push_info(format!("  {:<18} {}", cmd, desc));
-        }
-        return;
-    }
-
-    state.push_info(format!("[sending] {trimmed}"));
-
-    if let Some(msg_tx) = crate::tui::global_msg_tx() {
-        let _ = msg_tx.send(AppMessage::SendMessage(trimmed.to_string()));
-    }
-}
-
-// ── PqEvent → LogEntry conversion ──────────────────────────────────────
-
-fn event_to_log(event: &PqEvent) -> LogEntry {
-    match event {
-        PqEvent::Listening { address } => LogEntry::success(format!("listening on {address}")),
-        PqEvent::PeerConnected { peer_id } => {
-            LogEntry::success(format!("peer connected: {}", shorten_peer_id(peer_id)))
-        }
-        PqEvent::PeerDisconnected { peer_id } => {
-            LogEntry::warn(format!("peer disconnected: {}", shorten_peer_id(peer_id)))
-        }
-        PqEvent::PeerDiscovered { peer_id, addresses } => {
-            let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
-            LogEntry::info(format!(
-                "discovered {} at {:?}",
-                shorten_peer_id(peer_id),
-                addrs
-            ))
-        }
-        PqEvent::KademliaBootstrapResult {
-            success,
-            peers_found,
-        } => {
-            if *success {
-                LogEntry::success(format!("Kademlia bootstrap ok ({peers_found} peers)"))
-            } else {
-                LogEntry::warn(format!("Kademlia bootstrap failed ({peers_found} peers)"))
-            }
-        }
-        PqEvent::MessageReceived { from, data } => {
-            if let Ok(env) = Envelope::decode(data) {
-                let text = String::from_utf8_lossy(&env.payload);
-                LogEntry::info(format!("{}: {text}", shorten_peer_id(&env.sender_id)))
-            } else {
-                let text = String::from_utf8_lossy(data);
-                LogEntry::info(format!("message from {}: {text}", shorten_peer_id(from)))
-            }
-        }
-        PqEvent::InboundConnectionError { error } => {
-            LogEntry::error(format!("inbound connection error: {error}"))
-        }
-        PqEvent::OutboundConnectionError { peer_id, error } => LogEntry::error(format!(
-            "outbound error to {}: {error}",
-            shorten_peer_id(peer_id)
-        )),
-        PqEvent::UnknownEvent { description } => LogEntry::warn(format!("unknown: {description}")),
-        PqEvent::NatStatus { is_public } => {
-            let status = if *is_public { "public" } else { "private" };
-            LogEntry::info(format!("NAT status: {status}"))
-        }
-        PqEvent::RelayReservation {
-            relay_peer_id,
-            accepted,
-        } => {
-            if *accepted {
-                LogEntry::success(format!(
-                    "relay reservation accepted: {}",
-                    shorten_peer_id(relay_peer_id)
-                ))
-            } else {
-                LogEntry::warn(format!(
-                    "relay reservation failed: {}",
-                    shorten_peer_id(relay_peer_id)
-                ))
-            }
-        }
-        PqEvent::DirectConnectionUpgraded { peer_id } => {
-            LogEntry::success(format!("DCUtR upgrade: {}", shorten_peer_id(peer_id)))
-        }
-    }
-}
-
-fn handle_command_result(result: &CommandResult, state: &mut AppState) {
-    match result {
-        CommandResult::PeerId(peer_id) => {
-            state.peer_id_display = shorten_peer_id(peer_id);
-            state.peer_id = peer_id.clone();
-            state.push_info(format!("peer id: {peer_id}"));
-        }
-        CommandResult::Listeners(listeners) => {
-            if listeners.is_empty() {
-                state.push_warn("no listeners");
-            } else {
-                for addr in listeners {
-                    state.push_info(format!("listening: {addr}"));
-                }
-            }
-        }
-        CommandResult::ConnectedPeers(peers) => {
-            state.connected_count = peers.len();
-            if peers.is_empty() {
-                state.push_info("no connected peers");
-            } else {
-                state.push_success(format!("{} connected peer(s):", peers.len()));
-                for peer in peers {
-                    state.push_info(format!("  {}", shorten_peer_id(peer)));
-                }
-            }
-        }
-        CommandResult::DialResult(Ok(())) => {
-            state.push_success("dial initiated");
-        }
-        CommandResult::DialResult(Err(e)) => {
-            state.push_error(format!("dial failed: {e}"));
-        }
-        CommandResult::RelayResult(Ok(())) => {
-            state.push_success("relay listen initiated");
-        }
-        CommandResult::RelayResult(Err(e)) => {
-            state.push_error(format!("relay failed: {e}"));
-        }
-        CommandResult::PublishResult(Ok(())) => {
-            state.push_success("message published");
-        }
-        CommandResult::PublishResult(Err(e)) => {
-            state.push_error(format!("publish failed: {e}"));
-        }
-    }
-}
-
 // ── Key handling ───────────────────────────────────────────────────────
 
 fn handle_key_event(
@@ -631,124 +242,6 @@ fn handle_key_event(
     }
 }
 
-// ── Render ─────────────────────────────────────────────────────────────
-
-fn render(frame: &mut ratatui::Frame, state: &mut AppState) {
-    let [status_area, log_area, input_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(3),
-    ])
-    .areas(frame.area());
-
-    render_status_bar(frame, status_area, state);
-    render_log_panel(frame, log_area, state);
-    render_input_panel(frame, input_area, state);
-}
-
-fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let nat_text = match state.nat_public {
-        Some(true) => Span::styled(" NAT: Public ", Style::default().fg(palette::GREEN)),
-        Some(false) => Span::styled(" NAT: Private ", Style::default().fg(palette::YELLOW)),
-        None => Span::styled(" NAT: Unknown ", Style::default().fg(palette::TEXT_DIM)),
-    };
-
-    let conn_color = if state.connected_count > 0 {
-        palette::GREEN
-    } else {
-        palette::TEXT_DIM
-    };
-    let conn_icon = if state.connected_count > 0 {
-        "◉"
-    } else {
-        "○"
-    };
-
-    let title = Line::from(vec![
-        Span::styled(
-            " PQNodium ",
-            Style::default()
-                .fg(palette::PURPLE)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("│ ", Style::default().fg(palette::TEXT_MUTED)),
-        Span::styled(
-            &state.peer_id_display,
-            Style::default().fg(palette::TEXT_DIM),
-        ),
-        Span::styled(" │ ", Style::default().fg(palette::TEXT_MUTED)),
-        Span::styled(
-            format!(" {conn_icon} {} connected ", state.connected_count),
-            Style::default().fg(conn_color),
-        ),
-        Span::styled("│", Style::default().fg(palette::TEXT_MUTED)),
-        nat_text,
-    ]);
-
-    let status_bar = Paragraph::new(title).style(Style::default().bg(palette::STATUS_BG));
-    frame.render_widget(status_bar, area);
-}
-
-fn render_log_panel(frame: &mut ratatui::Frame, area: Rect, state: &mut AppState) {
-    let log_lines: Vec<Line<'_>> = state.logs.iter().map(|e| e.to_line()).collect();
-    let log_content_height = log_lines.len() as u16;
-    let visible_height = area.height.saturating_sub(2);
-
-    let max_scroll = log_content_height.saturating_sub(visible_height);
-    if state.scroll_offset >= max_scroll {
-        state.scroll_offset = max_scroll;
-        state.auto_scroll = true;
-    }
-
-    let log = Paragraph::new(log_lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(palette::BORDER))
-                .style(Style::default().bg(palette::BG)),
-        )
-        .wrap(Wrap { trim: false })
-        .scroll((state.scroll_offset, 0));
-
-    frame.render_widget(log, area);
-}
-
-fn render_input_panel(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let input_display = format!(" {}", state.input);
-    let input = Paragraph::new(input_display)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(palette::BORDER_BRIGHT))
-                .title(Line::from(vec![
-                    Span::styled(
-                        " > ",
-                        Style::default()
-                            .fg(palette::ACCENT)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "Enter command or message",
-                        Style::default().fg(palette::TEXT_DIM),
-                    ),
-                ]))
-                .style(Style::default().bg(palette::INPUT_BG)),
-        )
-        .style(Style::default().fg(palette::TEXT))
-        .scroll((0, (state.input_cursor + 1) as u16));
-
-    frame.render_widget(input, area);
-
-    let cursor_x = (state.input_cursor + 2) as u16;
-    let cursor_y = area.y + 1;
-    frame.set_cursor_position(Position::new(
-        cursor_x.min(area.x + area.width.saturating_sub(2)),
-        cursor_y,
-    ));
-}
-
 // ── Global message sender (for oneshot spawn forwarding) ───────────────
 
 static MSG_TX: OnceLock<mpsc::UnboundedSender<AppMessage>> = OnceLock::new();
@@ -767,7 +260,7 @@ fn run_app(
     cmd_tx: mpsc::UnboundedSender<NodeCommand>,
 ) -> io::Result<()> {
     loop {
-        terminal.draw(|frame| render(frame, &mut state))?;
+        terminal.draw(|frame| render::render(frame, &mut state))?;
 
         std::thread::sleep(Duration::from_millis(50));
 
@@ -814,7 +307,7 @@ fn run_app(
                     let encoded = envelope.encode();
                     let (tx, rx) = oneshot::channel();
                     if cmd_tx.send(NodeCommand::Publish(encoded, tx)).is_ok() {
-                        if let Some(msg_tx) = crate::tui::global_msg_tx() {
+                        if let Some(msg_tx) = global_msg_tx() {
                             tokio::spawn(async move {
                                 if let Ok(result) = rx.await {
                                     let _ = msg_tx.send(AppMessage::CommandResponse(
