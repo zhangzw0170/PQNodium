@@ -22,6 +22,7 @@ impl PeerId {
         Self(hasher.finalize().into())
     }
 
+    /// Return the raw 32-byte PeerId.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -83,22 +84,27 @@ impl Identity {
         }
     }
 
+    /// Return the derived PeerId.
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
 
+    /// Return the Ed25519 public key.
     pub fn ed25519_public_key(&self) -> &Ed25519PublicKey {
         &self.ed25519_pk
     }
 
+    /// Return the ML-DSA-65 public key.
     pub fn mldsa65_public_key(&self) -> &MlDsa65PublicKey {
         &self.mldsa65_pk
     }
 
+    /// Return the Ed25519 secret key.
     pub fn ed25519_secret_key(&self) -> &Ed25519SecretKey {
         &self.ed25519_sk
     }
 
+    /// Return the ML-DSA-65 secret key.
     pub fn mldsa65_secret_key(&self) -> &MlDsa65SecretKey {
         &self.mldsa65_sk
     }
@@ -137,14 +143,17 @@ pub struct PublicIdentity {
 }
 
 impl PublicIdentity {
+    /// Return the derived PeerId.
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
 
+    /// Return the Ed25519 public key.
     pub fn ed25519_public_key(&self) -> &Ed25519PublicKey {
         &self.ed25519_pk
     }
 
+    /// Return the ML-DSA-65 public key.
     pub fn mldsa65_public_key(&self) -> &MlDsa65PublicKey {
         &self.mldsa65_pk
     }

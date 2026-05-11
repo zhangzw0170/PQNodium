@@ -3,18 +3,25 @@ use thiserror::Error;
 /// Errors for the P2P layer.
 #[derive(Debug, Error)]
 pub enum PqP2pError {
+    /// Generic transport-layer error.
     #[error("transport error: {0}")]
     Transport(String),
+    /// No encrypted session exists with the given peer.
     #[error("no session established with peer: {0}")]
     NoSession(String),
+    /// Cryptographic handshake failure.
     #[error("handshake failed: {0}")]
     Handshake(String),
+    /// Dialing a remote peer failed.
     #[error("dial failed: {0}")]
     DialFailed(String),
+    /// Message exceeds the configured maximum size.
     #[error("message too large: {0} bytes")]
     MessageTooLarge(usize),
+    /// Multiaddr is malformed or missing required components.
     #[error("invalid address: {0}")]
     InvalidAddress(String),
+    /// Underlying I/O error from the OS or network stack.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

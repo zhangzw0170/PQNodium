@@ -4,10 +4,15 @@ use std::time::Duration;
 /// Configuration for a PqNode.
 #[derive(Debug, Clone)]
 pub struct PqNodeConfig {
+    /// Multiaddr to listen on (e.g. `/ip4/0.0.0.0/udp/0/quic-v1`).
     pub listen_addr: Multiaddr,
+    /// Peers to add to the Kademlia routing table on startup.
     pub bootstrap_peers: Vec<Multiaddr>,
+    /// User-agent string advertised via the Identify protocol.
     pub agent_version: String,
+    /// Timeout for Kademlia DHT queries.
     pub kad_query_timeout: Duration,
+    /// Maximum Gossipsub message size in bytes (1–64 MiB).
     pub max_message_size: usize,
     /// Maximum number of concurrent incoming connections.
     pub max_incoming_connections: u32,
@@ -40,6 +45,7 @@ impl Default for PqNodeConfig {
 }
 
 impl PqNodeConfig {
+    /// Create a config with a custom listen address and defaults for all other fields.
     pub fn new(listen_addr: Multiaddr) -> Self {
         Self {
             listen_addr,
@@ -47,26 +53,31 @@ impl PqNodeConfig {
         }
     }
 
+    /// Set bootstrap peers for Kademlia DHT.
     pub fn with_bootstrap_peers(mut self, peers: Vec<Multiaddr>) -> Self {
         self.bootstrap_peers = peers;
         self
     }
 
+    /// Set the Identify protocol user-agent string.
     pub fn with_agent_version(mut self, version: impl Into<String>) -> Self {
         self.agent_version = version.into();
         self
     }
 
+    /// Set the Kademlia query timeout.
     pub fn with_kad_timeout(mut self, timeout: Duration) -> Self {
         self.kad_query_timeout = timeout;
         self
     }
 
+    /// Enable or disable relay server mode.
     pub fn with_relay_server(mut self, enabled: bool) -> Self {
         self.relay_server_enabled = enabled;
         self
     }
 
+    /// Validate config values, returning an error if any are out of range.
     pub fn validate(&self) -> Result<(), crate::error::PqP2pError> {
         if self.max_message_size == 0 {
             return Err(crate::error::PqP2pError::MessageTooLarge(0));

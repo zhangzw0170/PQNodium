@@ -10,14 +10,19 @@ use sha2::{Digest, Sha256};
 /// a per-group symmetric key derived from the PQ handshake.
 pub const ENVELOPE_VERSION: u8 = 0x01;
 
+/// A structured broadcast message for the Gossipsub wire format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Envelope {
+    /// Unix timestamp in milliseconds when the envelope was created.
     pub timestamp_ms: u64,
+    /// Sender's identifier (typically their libp2p PeerId string).
     pub sender_id: String,
+    /// Arbitrary message payload bytes.
     pub payload: Vec<u8>,
 }
 
 impl Envelope {
+    /// Create a new envelope with the current timestamp.
     pub fn new(sender_id: String, payload: Vec<u8>) -> Self {
         Self {
             timestamp_ms: std::time::SystemTime::now()
@@ -29,6 +34,7 @@ impl Envelope {
         }
     }
 
+    /// Encode the envelope into its binary wire format.
     pub fn encode(&self) -> Vec<u8> {
         let sender_bytes = self.sender_id.as_bytes();
         let mut buf = Vec::with_capacity(1 + 8 + 2 + sender_bytes.len() + 4 + self.payload.len());
@@ -41,6 +47,7 @@ impl Envelope {
         buf
     }
 
+    /// Decode an envelope from its binary wire format, rejecting trailing data.
     pub fn decode(data: &[u8]) -> Result<Self, EnvelopeError> {
         if data.len() < 15 {
             return Err(EnvelopeError::TooShort {
@@ -115,14 +122,19 @@ impl Envelope {
     }
 }
 
+/// Errors that can occur during envelope encoding/decoding.
 #[derive(Debug, thiserror::Error)]
 pub enum EnvelopeError {
+    /// The input buffer is shorter than the minimum required size.
     #[error("envelope too short: expected {expected} bytes, got {got}")]
     TooShort { expected: usize, got: usize },
+    /// The version byte is not recognized.
     #[error("unknown envelope version: {0}")]
     UnknownVersion(u8),
+    /// The sender ID field contains invalid UTF-8.
     #[error("invalid sender ID (non-UTF8)")]
     InvalidSenderId,
+    /// The input has trailing bytes after the envelope payload.
     #[error("trailing data: envelope is {actual} bytes but only {consumed} were expected")]
     TrailingData { actual: usize, consumed: usize },
 }
