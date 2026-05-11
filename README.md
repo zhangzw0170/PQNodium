@@ -14,6 +14,7 @@ PQNodium is a post-quantum secure, decentralized messaging protocol built with R
 
 - 🔐 **后量子加密 / PQC by Default**: ML-KEM 密钥交换，ML-DSA 身份签名。
 - 🌐 **纯 P2P / Pure P2P**: 无中心服务器，通过 Kademlia DHT 实现 LAN + WAN 通信。
+- 📡 **Gossipsub 广播 / Gossipsub Broadcast**: 签名消息广播，内容去重（SHA-256 LRU）。
 - 🏗️ **Rust 内核 / Rust Core**: 内存安全，零成本抽象。
 - 📦 **Tauri 前端 / Tauri Frontend**: 轻量、安全、可设计的用户界面。
 - 🔒 **零降级策略 / Zero Downgrade**: 加密不可用时拒绝通信，绝不明文传输。
@@ -33,8 +34,18 @@ cargo build --release -p pqnodium-cli
 # 连接对等节点 / Dial a peer
 # 在 TUI 中输入: /dial /ip4/<IP>/udp/<PORT>/quic-v1/p2p/<PEER_ID>
 
+# 发送广播 / Send broadcast
+# 在 TUI 中直接输入文字即可通过 Gossipsub 广播
+
+# 作为中继服务器 / As relay server
+./target/release/pqnodium-cli start --relay-server
+
 # 运行开发模式 / Run dev (Tauri)
 cargo tauri dev
+
+# 测试 / Test
+cargo test                                     # 全部测试 (193 tests)
+cargo test --test gossipsub_messaging          # Gossipsub 集成测试
 ```
 
 ## 文档 / Documentation

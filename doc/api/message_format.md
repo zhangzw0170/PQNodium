@@ -1,10 +1,10 @@
 # Message Format
 
-*Updated: Phase 1 implementation complete. Message protocol defined in `pqnodium-core/src/message.rs`.*
+*Updated: Phase 1-8 implementation complete.*
 
-## Wire Format
+## 1. Point-to-Point Message Format
 
-All PQNodium messages use a custom binary format with a fixed header:
+Defined in `pqnodium-core/src/message.rs`. Used for 1:1 encrypted communication after hybrid handshake.
 
 ```
  0        1        2        3        4        5        6        7
@@ -54,3 +54,48 @@ All PQNodium messages use a custom binary format with a fixed header:
 ### Payload Length
 
 The `payload_len` field in the header specifies the length of the encrypted payload (nonce excluded). The total message size is `8 + 12 + payload_len`.
+
+## 2. Broadcast Envelope Format
+
+Defined in `pqnodium-core/src/envelope.rs`. Used for Gossipsub broadcast messages (Phase 6+).
+
+```
++--------+--------+--------+--------+--------+--------+--------+--------+
+| version (1 byte)                                                      |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| timestamp_ms (8 bytes, little-endian)                                 |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| sender_id_len (2 bytes, big-endian)                                   |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| sender_id (variable, up to 64 bytes)                                  |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| payload_len (4 bytes, big-endian)                                     |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| payload (variable)                                                    |
++--------+--------+--------+--------+--------+--------+--------+--------+
+```
+
+### Fields
+
+| Field | Size | Description |
+|-------|------|-------------|
+| `version` | 1 byte | Envelope version (currently `0x01`) |
+| `timestamp_ms` | 8 bytes LE | Unix epoch milliseconds (sender clock) |
+| `sender_id_len` | 2 bytes BE | Length of sender ID string |
+| `sender_id` | variable | Sender identifier (UTF-8, max 64 bytes) |
+| `payload_len` | 4 bytes BE | Length of broadcast payload |
+| `payload` | variable | Application payload (currently unencrypted) |
+
+### Content Hash (Dedup)
+
+`content_hash()` computes `SHA-256(version || timestamp_ms || sender_id || payload)` for message deduplication.
+
+## 3. Message Deduplication
+
+Defined in `pqnodium-p2p/src/node.rs`. LRU content-hash cache with TTL eviction.
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `DEDUP_CAPACITY` | 1024 | Maximum cached hashes |
+| `DEDUP_TTL` | 5 minutes | Hash expiry time |
+| Pruning | Automatic | Expired entries pruned on every `poll_next()` call |

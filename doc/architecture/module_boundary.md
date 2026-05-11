@@ -12,15 +12,19 @@ PQNodium/
 │   │   └── conformance/    #     统一测试套件                     空 (占位)
 │   ├── identity.rs         #   身份管理（密钥存储、PeerId 生成）    ✅
 │   ├── message.rs          #   消息协议（编解码、序列化）           ✅
+│   ├── envelope.rs         #   Gossipsub 广播消息封装格式           ✅
 │   └── state.rs            #   会话状态机                         ✅
-├── pqnodium-p2p/           # libp2p 集成（QUIC+TCP、Kademlia、Identify、Ping） ✅
+├── pqnodium-p2p/           # libp2p 集成（QUIC+TCP、Kademlia、Identify、Ping、Gossipsub） ✅
 │   ├── lib.rs              #   模块导出                           ✅
 │   ├── config.rs           #   节点配置                           ✅
 │   ├── error.rs            #   错误类型                           ✅
 │   ├── event.rs            #   事件枚举                           ✅
 │   ├── transport.rs        #   QUIC + TCP 双传输                 ✅
-│   ├── behaviour.rs        #   Kademlia + Identify + Ping         ✅
-│   └── node.rs             #   PqNode (Swarm 封装)               ✅
+│   ├── behaviour.rs        #   Kademlia + Identify + Ping + Gossipsub + Relay + AutoNAT + DCUtR ✅
+│   ├── node.rs             #   PqNode (Swarm 封装 + 消息去重)     ✅
+│   └── tests/              #   集成测试
+│       ├── eight_node_mesh.rs     # 8 节点 mesh 测试 (10 tests)     ✅
+│       └── gossipsub_messaging.rs # Gossipsub 消息测试 (4 tests)    ✅
 ├── pqnodium-cli/           # 终端界面                              ✅
 └── src-tauri/              # Tauri v2 应用壳 (pqnodium-app)       ✅ (IPC stub only)
 ```

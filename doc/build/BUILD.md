@@ -30,9 +30,30 @@ PQNodium targets `x86_64` architecture for Windows and Linux.
 | `cargo build --release -p pqnodium-cli` | Build CLI binary (release) |
 | `cargo build --release -p pqnodium-core` | Build core library (release) |
 | `cargo build --release -p pqnodium-p2p` | Build P2P library (release) |
-| `cargo tauri dev` | Run Tauri app in dev mode (Phase 3b) |
+| `cargo tauri dev` | Run Tauri app in dev mode |
+| `cargo tauri build` | Build Tauri app (release) |
 | `cross build --target x86_64-unknown-linux-gnu --release` | Cross-compile for Linux |
 <!-- /AUTO-GENERATED -->
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `cargo test` | Run all tests (193 tests across all suites) |
+| `cargo test -p pqnodium-core` | Core crypto tests only |
+| `cargo test -p pqnodium-p2p` | P2P layer tests only |
+| `cargo test -p pqnodium-cli` | CLI tests only |
+| `cargo test --test eight_node_mesh` | 8-node mesh integration tests (10 tests) |
+| `cargo test --test gossipsub_messaging` | Gossipsub messaging tests (4 tests) |
+| `cargo test -- --nocapture` | Show test output |
+
+### Lint & Format
+
+| Command | Description |
+|---------|-------------|
+| `cargo fmt` | Format code |
+| `cargo clippy -- -D warnings` | Lint (warnings as errors) |
+| `cargo audit` | Dependency vulnerability scan |
 
 ### Tauri App
 
@@ -40,6 +61,10 @@ PQNodium targets `x86_64` architecture for Windows and Linux.
 # Frontend not yet scaffolded (React + TypeScript + Tailwind planned)
 # Build and run Tauri app
 cargo tauri dev
+
+# Or build release binary
+cargo tauri build
+# Output: target/release/pqnodium-app
 ```
 
 ## Cross-Compilation

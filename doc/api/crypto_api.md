@@ -97,6 +97,6 @@ fn hybrid_verify<S1: Signer, S2: Signer>(...) -> bool;
 | `x25519-dalek` | 仅 `backend/pqc/x25519.rs` | 稳定 |
 | `ed25519-dalek` | 仅 `backend/pqc/ed25519.rs` | 稳定 |
 | `chacha20poly1305` | 仅 `backend/pqc/chacha20.rs` | 稳定 |
-| `openmls` | 仅群组消息模块，不影响 1:1 通信 | Phase 5+ |
+| `openmls` | 仅群组消息模块，不影响 1:1 通信 | 待调研（Phase 5-8 使用 Gossipsub） |
 
 > `rustpq` 和 `qcomm-core` 已失效，不采用。Hybrid KEM 基于 `ml-kem` + `x25519-dalek` 自行组合。详见 [References](../REFERENCE.md)。

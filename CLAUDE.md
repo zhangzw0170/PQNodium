@@ -16,6 +16,7 @@ cargo build --release -p pqnodium-cli          # CLI binary
 cargo build --release -p pqnodium-core         # Core library
 cargo build --release -p pqnodium-p2p          # P2P library
 cargo tauri dev                                 # Tauri app (frontend not yet scaffolded)
+cargo tauri build                               # Tauri release build
 cross build --target x86_64-unknown-linux-gnu --release  # Cross-compile Win → Linux
 
 # Test
@@ -157,4 +158,6 @@ All docs are in `doc/` with bilingual content. Key files:
 | 6 | Envelope wire format (structured messages) | Done |
 | 7 | Gossipsub integration tests (2-node, 3-node) | Done |
 | 8 | Message deduplication via content hash | Done |
-| 8+ | Encrypted payloads, full GUI, mobile | Future |
+| 8+ | Encrypted broadcast payloads | Pending research |
+| 9+ | Full Tauri GUI (React + TypeScript) | Pending research |
+| 10+ | Mobile / multi-platform | Pending research |

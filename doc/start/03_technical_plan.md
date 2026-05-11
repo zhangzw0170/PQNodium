@@ -236,14 +236,25 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 - [x] CLI/TUI 集成（`--relay`, `--relay-server`, `/relay`, `/nat`）
 - [x] CI 全绿（Lint, Test, Build, Audit）
 
+**✅ 第三个里程碑交付 (Phase 5-8)**:
+- [x] Gossipsub 广播消息（签名，`pqnodium-v1` 主题）
+- [x] Envelope 结构化消息封装格式
+- [x] Gossipsub 集成测试（2-node、3-node，4 tests）
+- [x] 消息去重（content-hash LRU，1024 entries，5-min TTL）
+- [x] 193 tests 全部通过
+
 ### Phase 4+: 后续扩展
 
 | 阶段 | 目标 | 关键交付 |
 |------|------|---------|
 | **Phase 4** | NAT 穿透 | Relay fallback、UDP hole punching | ✅ Done |
-| **Phase 5** | 群组 | GossipSub 或 MLS 群组通信 |
-| **Phase 6** | Tauri GUI | 完整聊天界面、主题、多语言 |
-| **Phase 7** | 扩展平台 | macOS / Android (按需) |
+| **Phase 5** | 广播消息 | Gossipsub 签名广播 | ✅ Done |
+| **Phase 6** | 消息封装 | Envelope wire format | ✅ Done |
+| **Phase 7** | 集成测试 | Gossipsub 2-node、3-node 测试 | ✅ Done |
+| **Phase 8** | 消息去重 | Content-hash LRU dedup | ✅ Done |
+| **Phase 8+** | 加密广播 | Envelope + session key 加密 | 待调研 |
+| **Phase 9+** | Tauri GUI | 完整聊天界面、主题、多语言 | 待调研 |
+| **Phase 10+** | 扩展平台 | macOS / Android (按需) | 待调研 |
 
 ## 安全考量
 
@@ -254,11 +265,14 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 - [x] 前向保密 (临时密钥)
 - [x] Harvest-Now-Decrypt-Later 防护
 - [x] QUIC 传输层加密 (TLS 1.3)
+- [x] 消息去重 / Replay 防护 (content-hash LRU dedup)
+- [x] NAT 穿透 (AutoNAT + Relay v2 + DCUtR)
+- [x] 广播消息签名 (Gossipsub signed authenticity)
 
 ### 待解决
 
 - [ ] MITM 防御 (需要 out-of-band 身份验证，如指纹比对)
 - [ ] 抗 DoS / Sybil 攻击
-- [ ] 消息去重 / Replay 防护
+- [ ] 广播消息端到端加密 (当前 Gossipsub 广播为明文)
 - [ ] 密钥轮换策略
 - [ ] 群组消息的 Post-Compromise Security

@@ -12,16 +12,22 @@
 | **Identity** | PeerId, Identity, PublicIdentity (hybrid sign/verify) | `identity.rs` | ✅ Done |
 | **Message Protocol** | MessageHeader, Message (wire format + AEAD) | `message.rs` | ✅ Done |
 | **Session State** | HandshakeSession, SessionKeys (state machine) | `state.rs` | ✅ Done |
+| **Envelope** | Gossipsub broadcast wire format (version + timestamp + sender + payload) | `envelope.rs` | ✅ Done |
 | **Transport** | QUIC + TCP (OrTransport) | `pqnodium-p2p/src/transport.rs` | ✅ Done |
 | **Discovery** | Kademlia DHT + Identify | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
-| **P2P Node** | PqNode (Swarm wrapper, event loop) | `pqnodium-p2p/src/node.rs` | ✅ Done |
-| **CLI** | Interactive terminal (clap + tokio) | `pqnodium-cli/src/main.rs` | ✅ Done |
-| **Group** | GossipSub / MLS | — | ⏳ Phase 5+ |
+| **NAT Traversal** | AutoNAT + Relay v2 + DCUtR | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
+| **Broadcast** | Gossipsub (signed, `pqnodium-v1` topic) | `pqnodium-p2p/src/behaviour.rs` | ✅ Done |
+| **Dedup** | Content-hash LRU (1024 entries, 5-min TTL) | `pqnodium-p2p/src/node.rs` | ✅ Done |
+| **P2P Node** | PqNode (Swarm wrapper, event loop, dedup) | `pqnodium-p2p/src/node.rs` | ✅ Done |
+| **CLI** | Interactive terminal (clap + tokio + ratatui TUI) | `pqnodium-cli/src/main.rs` | ✅ Done |
 | **Application** | Tauri IPC | `src-tauri/src/main.rs` | ✅ Stub only |
 
 ## Layers
 1.  **Transport**: QUIC (primary) + TCP+Noise+Yamux (fallback)
 2.  **Security**: Noise Protocol (TCP path), TLS 1.3 (QUIC path)
-3.  **Network**: Kademlia DHT + Identify
-4.  **Messaging**: Custom binary format (Phase 1)
-5.  **Application**: Tauri IPC (Phase 3b, stubs only)
+3.  **Network**: Kademlia DHT + Identify + AutoNAT + Relay v2 + DCUtR
+4.  **Broadcast**: Gossipsub (signed messages, `pqnodium-v1` topic)
+5.  **Envelope**: Version + timestamp + sender ID + payload wire format
+6.  **Dedup**: Content-hash (SHA-256) LRU cache with TTL eviction
+7.  **Messaging**: Custom binary format (Phase 1)
+8.  **Application**: Tauri IPC (Phase 3b, stubs only)

@@ -12,10 +12,11 @@ This directory contains the security risk analysis for each phase of PQNodium de
 | **Phase 3** | [CLI Interface](./phase3_risk.md) | ✅ Complete |
 | **Phase 3b** | [Tauri Shell + Frontend](./phase3b_risk.md) | ✅ Complete |
 | **Phase 4** | [NAT Traversal](./phase4_risk.md) | ✅ Complete |
+| **Phase 5-8** | [Gossipsub + Envelope + Dedup](./phase5_8_risk.md) | ✅ Complete |
 
 ## Priority Remediation Queue
 
-All HIGH and MEDIUM risks have been fixed:
+All HIGH and MEDIUM risks have been fixed or accepted:
 
 | ID | Risk | Phase | Status |
 |----|------|-------|--------|
@@ -30,6 +31,8 @@ All HIGH and MEDIUM risks have been fixed:
 | RISK-402 | No Content Security Policy | 3b | ✅ Fixed — CSP in tauri.conf.json |
 | RISK-404 | No IPC rate limiting | 3b | ✅ Fixed — 30 cmds/sec |
 | RISK-207 | Connection drops after ~10s (idle timeout) | 2 | ✅ Fixed — 24h idle timeout |
+| RISK-801 | Broadcast payloads not encrypted | 5-8 | ⚠️ Accepted — planned for future phase |
+| RISK-803 | No Gossipsub publish rate limiting | 5-8 | ⚠️ Accepted — libp2p peer scoring provides partial mitigation |
 
 ### Remaining LOW risks (deferred)
 
@@ -44,6 +47,8 @@ All HIGH and MEDIUM risks have been fixed:
 | RISK-306 | UFW blocks P2P listening port | 3 |
 | RISK-403 | System webview exploitation | 3b |
 | RISK-405 | Sensitive data exposure to frontend | 3b |
+| RISK-802 | Dedup TTL too short (5 min) | 5-8 |
+| RISK-805 | LRU dedup eviction under memory pressure | 5-8 |
 
 ## How to Use
 

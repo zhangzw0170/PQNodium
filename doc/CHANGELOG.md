@@ -8,18 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 5**: Gossipsub broadcast messaging — signed message authenticity, `pqnodium-v1` topic subscription, `PqNode::publish()` API, TUI `/publish` and plaintext input sends broadcast.
+- **Phase 6**: Envelope wire format — structured Gossipsub messages with version byte, timestamp, sender ID, payload. `content_hash()` (SHA-256) for deduplication.
+- **Phase 7**: Gossipsub integration tests — 2-node message delivery, 3-node broadcast, subscribe/unsubscribe, publish without subscribers (4 tests).
+- **Phase 8**: Message deduplication — content-hash based dedup with LRU eviction (1024 entries, 5-min TTL), automatic pruning of expired entries, transparent dedup in `poll_next()`.
 - **Phase 4**: NAT traversal — SwarmBuilder migration, AutoNAT, Relay v2 Client/Server, DCUtR hole-punching.
 - CLI args: `--relay <addr>` (listen via relay), `--relay-server` (act as relay node).
-- TUI commands: `/relay <addr>`, `/nat` for relay and NAT status control.
-- New events: `NatStatus`, `RelayReservation`, `DirectConnectionUpgraded`.
+- TUI commands: `/relay <addr>`, `/nat`, `/publish` for relay, NAT status, and broadcast control.
+- New events: `NatStatus`, `RelayReservation`, `DirectConnectionUpgraded`, `Message` (Gossipsub).
 - `max_relay_circuits` config field now passed to relay server (was dead code).
-
-### Fixed
-- `connected_peers` HashMap not cleaned up on peer disconnect (memory leak + stale data).
-- `GetClosestPeers` results incorrectly treated as connected peers in `/peers`.
-- `listen_on_relay` now validates input contains `/p2p/{peer_id}` and uses Multiaddr builder API.
-- Clippy `len_zero` and `needless_borrows` lint failures on Rust 1.95.
-- CI build-linux job missing Tauri system dependencies (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, etc.).
 - **Phase 0**: Cargo workspace skeleton with `pqnodium-core`, `pqnodium-p2p`, `pqnodium-cli`.
 - **Phase 1**: Core crypto — identity system, hybrid KEM (X25519 + ML-KEM-768), hybrid signatures (Ed25519 + ML-DSA-65), message protocol, session state machine.
 - **Phase 2**: P2P layer — libp2p integration with QUIC + TCP dual transport, Kademlia DHT, Identify, Ping.
@@ -29,11 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HMAC-SHA256 integrity protection for identity files with constant-time verification.
 - Connection limits: max 128 incoming connections.
 - 8-node local P2P integration test suite (10 tests).
+- Gossipsub integration test suite (4 tests).
+- Total: 193 tests passing across all suites.
 - CI workflows: lint, test, build, audit.
 
 ### Changed
 - Removed mDNS from P2P behaviour (caused stale peer discovery on shared networks).
 - Added TCP + Noise + Yamux as fallback transport alongside QUIC (QUIC hangs on some Windows configurations).
+- TUI plain text input now publishes via Gossipsub broadcast (was no-op before Phase 5).
+
+### Fixed
+- `connected_peers` HashMap not cleaned up on peer disconnect (memory leak + stale data).
+- `GetClosestPeers` results incorrectly treated as connected peers in `/peers`.
+- `listen_on_relay` now validates input contains `/p2p/{peer_id}` and uses Multiaddr builder API.
+- Clippy `len_zero` and `needless_borrows` lint failures on Rust 1.95.
+- CI build-linux job missing Tauri system dependencies (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, etc.).
 
 ### Joint Debugging (Phase 3 — 双节点联调)
 
@@ -58,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - Tauri frontend scaffold (React + TypeScript + Tailwind).
 - Auto-relay (automatic relay discovery via Kademlia DHT).
-- Group messaging.
+- Encrypted broadcast payloads (Envelope + session key encryption).
 - Full GUI.
 - Mobile support.
 
