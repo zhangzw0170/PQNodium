@@ -5,58 +5,35 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum PqEvent {
     /// Node is now listening on a new address.
-    Listening {
-        address: Multiaddr,
-    },
+    Listening { address: Multiaddr },
     /// A peer has connected to this node.
-    PeerConnected {
-        peer_id: String,
-    },
+    PeerConnected { peer_id: String },
     /// A peer has disconnected from this node.
-    PeerDisconnected {
-        peer_id: String,
-    },
+    PeerDisconnected { peer_id: String },
     /// A peer was discovered via the Identify protocol with its known addresses.
     PeerDiscovered {
         peer_id: String,
         addresses: Vec<Multiaddr>,
     },
     /// Result of a Kademlia DHT bootstrap attempt.
-    KademliaBootstrapResult {
-        success: bool,
-        peers_found: usize,
-    },
+    KademliaBootstrapResult { success: bool, peers_found: usize },
     /// A Gossipsub message was received from a peer.
-    MessageReceived {
-        from: String,
-        data: Vec<u8>,
-    },
+    MessageReceived { from: String, data: Vec<u8> },
     /// An inbound connection attempt failed.
-    InboundConnectionError {
-        error: String,
-    },
+    InboundConnectionError { error: String },
     /// An outbound connection attempt failed.
-    OutboundConnectionError {
-        peer_id: String,
-        error: String,
-    },
+    OutboundConnectionError { peer_id: String, error: String },
     /// An unmapped libp2p swarm event.
-    UnknownEvent {
-        description: String,
-    },
+    UnknownEvent { description: String },
     /// NAT status changed (AutoNAT detection).
-    NatStatus {
-        is_public: bool,
-    },
+    NatStatus { is_public: bool },
     /// Relay reservation result (client mode).
     RelayReservation {
         relay_peer_id: String,
         accepted: bool,
     },
     /// A relay connection was upgraded to a direct connection (DCUtR).
-    DirectConnectionUpgraded {
-        peer_id: String,
-    },
+    DirectConnectionUpgraded { peer_id: String },
 }
 
 impl fmt::Display for PqEvent {
