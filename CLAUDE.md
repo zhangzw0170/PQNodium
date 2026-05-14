@@ -146,6 +146,10 @@ All docs are in `doc/` with bilingual content. Key files:
 
 ## Development Phases
 
+Each version release resets phase numbering back to 1. See `doc/start/03_technical_plan.md` for full details.
+
+### v0.1.0 (released) — historical phase numbering
+
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Workspace skeleton, CI, directory structure | Done |
@@ -158,6 +162,18 @@ All docs are in `doc/` with bilingual content. Key files:
 | 6 | Envelope wire format (structured messages) | Done |
 | 7 | Gossipsub integration tests (2-node, 3-node) | Done |
 | 8 | Message deduplication via content hash | Done |
-| 8+ | Encrypted broadcast payloads | Pending research |
-| 9+ | Full Tauri GUI (React + TypeScript) | Pending research |
-| 10+ | Mobile / multi-platform | Pending research |
+
+### v0.2.0 (next) — MLS group encryption
+
+| Phase | Scope |
+|-------|-------|
+| 1 | MLS research & crate selection |
+| 2 | MLS core adapter (pluggable, aligns with crypto traits) |
+| 3 | Group lifecycle (create, invite, remove, epoch management) |
+| 4 | Encrypted broadcast integration (MLS + Gossipsub + Envelope) |
+| 5 | Key rotation & Post-Compromise Security |
+| 6 | Group integration tests |
+| 7 | CLI group commands |
+
+### v0.3.0 (future) — Tauri GUI (React + TypeScript + Tailwind)
+### v0.4.0 (future) — Platform expansion (macOS, Android)

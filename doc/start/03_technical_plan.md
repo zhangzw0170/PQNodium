@@ -208,53 +208,83 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 | **开发体验** | Web 技术 (React/Vue/Svelte) | Web 技术 (React/Vue) | QML 或 C++ Widgets |
 | **许可协议** | Apache-2.0 / MIT | MIT | GPL / 商业 (开源需注意) |
 
-## 项目里程碑
+## 版本规划规则
 
-### Phase 0-1: 首个里程碑 (Win ↔ Linux 互通)
+**每个版本发布后，Phase 编号从 1 重新开始。** 旧版本的 Phase 仅在该版本上下文中有意义。
 
-| 阶段 | 目标 | 关键交付 |
-|------|------|---------|
-| **Phase 0** | 项目骨架 | Cargo workspace, CI (`x86_64-pc-windows-msvc` + `x86_64-unknown-linux-gnu`), 基本目录结构 | ✅ Done |
-| **Phase 1** | 核心层 | 身份系统 (Ed25519+ML-DSA)、加密 (X25519+ML-KEM)、消息协议 | ✅ Done |
-| **Phase 2** | P2P 层 | libp2p 集成、Kademlia DHT、QUIC 传输 | ✅ Done |
-| **Phase 3** | CLI | 终端交互，登录/发消息/发现节点 | ✅ Done |
-| **Phase 3b** | Tauri 壳 | Tauri v2 项目初始化、IPC stub | ✅ Done (前端未搭建) |
+例如：
+- v0.1.0 包含 Phase 0–8（历史编号）
+- v0.2.0 从 Phase 1 开始重新计数（MLS 群组加密）
+- v0.3.0 再次从 Phase 1 开始（GUI / 平台扩展）
 
-**✅ 首个里程碑交付**:
-- [x] PQC Hybrid 握手完成 (X25519 + ML-KEM-768)
-- [x] 加密消息互发 (ChaCha20-Poly1305)
-- [x] Windows 节点 ↔ Linux 节点 直连成功（QUIC 有线直连已验证）
-- [ ] 文件互传
-- [x] Kademlia DHT 发现彼此（已跨节点验证）
+## v0.1.0 — 首个发布版本 (已完成)
 
-**✅ 第二个里程碑交付 (Phase 4)**:
-- [x] SwarmBuilder 迁移 + Relay Client 传输层
-- [x] AutoNAT NAT 类型检测
-- [x] Relay v2 Client（手动指定 relay 地址）
-- [x] Relay v2 Server（可选，`--relay-server`）
-- [x] DCUtR 打洞直连升级
-- [x] CLI/TUI 集成（`--relay`, `--relay-server`, `/relay`, `/nat`）
-- [x] CI 全绿（Lint, Test, Build, Audit）
+> 历史编号 Phase 0–8，此版本使用原始编号。
 
-**✅ 第三个里程碑交付 (Phase 5-8)**:
-- [x] Gossipsub 广播消息（签名，`pqnodium-v1` 主题）
-- [x] Envelope 结构化消息封装格式
-- [x] Gossipsub 集成测试（2-node、3-node，4 tests）
-- [x] 消息去重（content-hash LRU，1024 entries，5-min TTL）
-- [x] 194 tests 全部通过
+| 原始 Phase | 目标 | 状态 |
+|------------|------|------|
+| 0 | 项目骨架 (Cargo workspace, CI) | ✅ Done |
+| 1 | 核心加密层 (Hybrid KEM, Hybrid Sig, 消息协议) | ✅ Done |
+| 2 | P2P 层 (libp2p, Kademlia DHT, QUIC+TCP) | ✅ Done |
+| 3 | CLI 界面 (ratatui TUI) | ✅ Done |
+| 3b | Tauri v2 壳 (IPC stub) | ✅ Done |
+| 4 | NAT 穿透 (AutoNAT, Relay v2, DCUtR) | ✅ Done |
+| 5 | Gossipsub 广播消息 | ✅ Done |
+| 6 | Envelope wire format | ✅ Done |
+| 7 | Gossipsub 集成测试 | ✅ Done |
+| 8 | 消息去重 (content-hash LRU) | ✅ Done |
 
-### Phase 4+: 后续扩展
+**交付成果**: PQC Hybrid 握手, 加密消息互发 (ChaCha20-Poly1305), Win↔Linux 互通, NAT 穿透, 广播消息签名+去重, 194 tests 全部通过。
 
-| 阶段 | 目标 | 关键交付 |
-|------|------|---------|
-| **Phase 4** | NAT 穿透 | Relay fallback、UDP hole punching | ✅ Done |
-| **Phase 5** | 广播消息 | Gossipsub 签名广播 | ✅ Done |
-| **Phase 6** | 消息封装 | Envelope wire format | ✅ Done |
-| **Phase 7** | 集成测试 | Gossipsub 2-node、3-node 测试 | ✅ Done |
-| **Phase 8** | 消息去重 | Content-hash LRU dedup | ✅ Done |
-| **Phase 8+** | 加密广播 | Envelope + session key 加密 | 待调研 |
-| **Phase 9+** | Tauri GUI | 完整聊天界面、主题、多语言 | 待调研 |
-| **Phase 10+** | 扩展平台 | macOS / Android (按需) | 待调研 |
+## v0.2.0 — MLS 群组加密 (计划中)
+
+> 基于 RFC 9420 (Messaging Layer Security) 实现端到端加密群组通信。
+
+| Phase | 目标 | 关键交付 |
+|-------|------|---------|
+| **Phase 1** | MLS 调研与选型 | 调研 `openmls` / `mls-rs` crate，评估成熟度、PQC 兼容性、API 稳定性；输出选型报告 |
+| **Phase 2** | MLS Core Adapter | 封装 MLS 为 pluggable adapter（对齐现有 crypto trait 架构），KeyPackage 创建/解析，Welcome 消息处理 |
+| **Phase 3** | 群组生命周期 | 创建群组、邀请成员、移除成员、群组解散；MLS Epoch 管理 |
+| **Phase 4** | 加密广播集成 | 将 MLS 加密层与现有 Gossipsub + Envelope 管道对接，替换明文广播为加密广播 |
+| **Phase 5** | 密钥轮换与 PCS | Post-Compromise Security：Update Path、自主密钥更新、epoch 过渡期间的消息安全 |
+| **Phase 6** | 群组集成测试 | 多成员群组加解密、成员变更后的前向/后向安全、大规模群组性能基准 |
+| **Phase 7** | CLI 群组命令 | `/group create`, `/group invite`, `/group list`, `/group leave` 等交互命令 |
+
+### MLS 技术要点
+
+- **RFC 9420** 标准，提供 Forward Secrecy (FS) + Post-Compromise Security (PCS)
+- **Tree-based group key**：基于 Ratchet Tree 的群组密钥管理，成员变更仅影响局部路径
+- **PQC 兼容性**：MLS 支持 HPKE (Hybrid Public Key Encryption)，可结合 ML-KEM 作为 KEM 算法
+- **候选 crate**:
+  - `openmls` — Rust MLS 实现，社区活跃但 API 仍在演进
+  - `mls-rs` — AWS 维护，较新但可能有 AWS 偏向
+  - 最终选型取决于 Phase 1 调研结果
+
+### 依赖关系
+
+```
+Phase 1 (调研) → Phase 2 (adapter) → Phase 3 (群组) → Phase 4 (广播集成)
+                                                        → Phase 5 (PCS)
+                                      → Phase 6 (测试，依赖 Phase 3+4)
+                                      → Phase 7 (CLI，依赖 Phase 3)
+```
+
+## v0.3.0 — Tauri GUI (远期)
+
+| Phase | 目标 |
+|-------|------|
+| **Phase 1** | 前端脚手架 (React + TypeScript + Tailwind) |
+| **Phase 2** | 聊天界面 (消息列表、输入框、群组侧栏) |
+| **Phase 3** | 主题系统 + 多语言 |
+| **Phase 4** | 设置页面 (身份管理、网络配置) |
+
+## v0.4.0 — 平台扩展 (远期)
+
+| Phase | 目标 |
+|-------|------|
+| **Phase 1** | macOS (Apple Silicon) 支持 |
+| **Phase 2** | Android (PQC 性能评估) |
+| **Phase 3** | 自动 Relay 发现 (Kademlia DHT 查询) |
 
 ## 安全考量
 
@@ -269,10 +299,10 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 - [x] NAT 穿透 (AutoNAT + Relay v2 + DCUtR)
 - [x] 广播消息签名 (Gossipsub signed authenticity)
 
-### 待解决
+### 待解决 (v0.2.0 MLS 版本重点)
 
+- [ ] 广播消息端到端加密 → MLS 协议 (RFC 9420) 已列为 v0.2.0 核心目标
+- [ ] 密钥轮换策略 → MLS Update Path 提供自动密钥轮换
+- [ ] 群组消息的 Post-Compromise Security → MLS PCS 机制
 - [ ] MITM 防御 (需要 out-of-band 身份验证，如指纹比对)
 - [ ] 抗 DoS / Sybil 攻击
-- [ ] 广播消息端到端加密 (当前 Gossipsub 广播为明文)
-- [ ] 密钥轮换策略
-- [ ] 群组消息的 Post-Compromise Security
