@@ -241,7 +241,7 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 - [x] Envelope 结构化消息封装格式
 - [x] Gossipsub 集成测试（2-node、3-node，4 tests）
 - [x] 消息去重（content-hash LRU，1024 entries，5-min TTL）
-- [x] 193 tests 全部通过
+- [x] 194 tests 全部通过
 
 ### Phase 4+: 后续扩展
 

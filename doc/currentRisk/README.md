@@ -44,6 +44,9 @@ All HIGH and MEDIUM risks have been fixed or accepted:
 | RISK-207 | Connection drops after ~10s (idle timeout) | 2 | ✅ Fixed — 24h idle timeout |
 | RISK-801 | Broadcast payloads not encrypted | 5-8 | ⚠️ Accepted — planned for future phase |
 | RISK-803 | No Gossipsub publish rate limiting | 5-8 | ⚠️ Accepted — libp2p peer scoring provides partial mitigation |
+| RISK-901 | TUI monolith (1304 lines) | 3 | ✅ Fixed — split into 3 modules (max 797 lines) |
+| RISK-902 | CI test matrix only covers Windows | CI | ✅ Fixed — ubuntu-latest added to matrix |
+| RISK-903 | 20 cargo audit ignores without justification | CI | ✅ Fixed — each ignore has inline comment |
 
 ### Remaining LOW risks (deferred)
 
@@ -59,9 +62,6 @@ All HIGH and MEDIUM risks have been fixed or accepted:
 | RISK-405 | Sensitive data exposure to frontend | 3b |
 | RISK-802 | Dedup TTL too short (5 min) | 5-8 |
 | RISK-805 | LRU dedup eviction under memory pressure | 5-8 |
-| RISK-901 | TUI monolith (1304 lines, >800 line standard) | 3 |
-| RISK-902 | CI test matrix only covers Windows | CI |
-| RISK-903 | 20 cargo audit ignores without justification | CI |
 
 ## How to Use
 
