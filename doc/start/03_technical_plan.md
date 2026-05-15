@@ -382,6 +382,72 @@ Phase 6 (测试) ← 依赖 Phase 5
 Phase 7 (CLI) ← 依赖 Phase 4
 ```
 
+### 性能评估
+
+#### Sender Key + HybridKem 后端性能
+
+| 操作 | 计算量 | 预估延迟 | 备注 |
+|------|--------|---------|------|
+| **创建群组 (N 人)** | N × HybridKem.encapsulate | ~N × 0.5ms | ML-KEM-768 KeyGen ~11μs, encapsulate ~50μs on x86_64 |
+| **加密单条消息** | 1 × ChaCha20-Poly1305 | <0.01ms | 对称加密，忽略不计 |
+| **解密单条消息** | 1 × ChaCha20-Poly1305 | <0.01ms | 同上 |
+| **添加成员 (re-key)** | N × HybridKem.encapsulate | ~N × 0.5ms | 重新生成 group_key + 全员重新封装 |
+| **移除成员 (re-key)** | (N-1) × HybridKem.encapsulate | ~(N-1) × 0.5ms | 仅封装给剩余成员 |
+| **Chain Key ratchet** | 2 × SHA-256 | <0.01ms | 每消息 H1(ck)→mk, H2(ck)→next_ck |
+
+#### 带宽开销
+
+| 场景 | 开销 | 说明 |
+|------|------|------|
+| **单条加密消息** | +28 bytes | nonce(12) + tag(16)，相比明文 Envelope |
+| **GroupSetup (10 人)** | ~11 KB | 10 × HybridKem ciphertext (1088 bytes) + 元数据 |
+| **GroupReKey (10 人)** | ~11 KB | 同 GroupSetup |
+| **GroupSetup (50 人)** | ~55 KB | 线性增长，大组需考虑 mKEM 优化 |
+| **GroupSetup (100 人)** | ~109 KB | 接近 Gossipsub max_message_size (4MB)，可行但偏大 |
+
+#### Trait 抽象层性能影响
+
+| 层 | 开销 | 说明 |
+|----|------|------|
+| **dyn dispatch** | ~10ns/call | `Box<dyn GroupCipher>` 的 vtable 间接调用 |
+| **trait object** | 1 指针 + 1 vtable | 每个群组会话约 16 bytes 额外内存 |
+| **enum dispatch** | 0 | 如用 `enum SenderKeyOrMls { ... }` 替代 dyn，零开销 |
+| **数据拷贝** | 可控 | `Vec<u8>` 传递密文，避免不必要的 clone |
+
+**结论**: 对称加密消息的开销可忽略 (微秒级)。re-key 操作是主要瓶颈 (N × 0.5ms)，但仅在成员变更时触发，不影响日常消息吞吐。10 人以内的群组 re-key 延迟 <5ms，100 人 <50ms，均可接受。trait 抽象的 vtable 开销 (~10ns) 相比 ML-KEM 计算 (~50μs) 完全可忽略。
+
+### 风险评估
+
+#### 已识别风险
+
+| ID | 风险 | 严重程度 | 缓解措施 |
+|----|------|---------|---------|
+| **GR-001** | 组密钥泄露=全部历史消息暴露 | HIGH | 定期轮换 (每 N 条消息或 T 秒)；未来升级 MLS 获得完整 FS |
+| **GR-002** | 成员移除后的后妥协安全 (PCS) 依赖 re-key | MEDIUM | 移除成员时立即触发 re-key；re-key 消息优先于普通消息 |
+| **GR-003** | re-key 消息丢失导致密钥不同步 | MEDIUM | re-key 消息带序号 + ACK；超时重发；降级为重新邀请全员 |
+| **GR-004** | 大组 (100+) re-key 带宽开销 | LOW | 短期: 接受开销；中期: mKEM 优化 (9× 带宽减少)；长期: MLS |
+| **GR-005** | trait 抽象层引入实现复杂度 | LOW | 遵循现有 crypto/traits/ 模式 (ZST + assoc types)；先实现一个后端验证 trait 设计 |
+| **GR-006** | Sender Key Chain Key 无后向安全 | MEDIUM | Chain Key 单向 ratchet (H1/H2)，泄露后无法回退，但可推导未来；定期轮换打断链 |
+| **GR-007** | GroupSetup 消息广播到非成员 | MEDIUM | 加密的组密钥只有目标成员能解封 (HybridKem)；非成员收到也无法解密 |
+| **GR-008** | 多群组并发的密钥状态管理 | LOW | 每个 GroupSession 独立管理 sender_key_chain + member_list |
+| **GR-009** | Gossipsub 乱序导致 re-key 时序混乱 | MEDIUM | re-key 带递增 epoch number；本地缓冲乱序消息；丢弃旧 epoch 消息 |
+
+#### trait 层引入的风险
+
+| 风险 | 说明 | 缓解 |
+|------|------|------|
+| **trait 设计不足** | 当前 trait 无法覆盖 MLS 的全部操作 (如 external join, PSK) | 初始 trait 仅定义通用操作；MLS 特有操作通过 extension trait 补充 |
+| **后端替换后语义差异** | Sender Key 和 MLS 的安全语义不同 (FS/PCS) | 上层代码不应假设特定的安全属性；文档明确每个后端的安全保证 |
+| **后端间不兼容** | Sender Key 创建的群组无法迁移到 MLS | 群组生命周期绑定后端；迁移需创建新群组 |
+
+#### 已接受风险
+
+| 风险 | 接受理由 |
+|------|---------|
+| Sender Key 无完整 FS | 每 Chain Key ratchet 提供消息级 FS；组密钥级 FS 仅在 re-key 时获得；这是 Sender Key 模型的已知权衡 |
+| Sender Key 无 PCS | 成员离组后 re-key 恢复安全；这是已知局限，MLS 升级后解决 |
+| 大组带宽线性增长 | 10-50 人可接受；100+ 人需等待 mKEM 优化 |
+
 ## v0.3.0 — Tauri GUI (远期)
 
 | Phase | 目标 |
@@ -412,10 +478,10 @@ Phase 7 (CLI) ← 依赖 Phase 4
 - [x] NAT 穿透 (AutoNAT + Relay v2 + DCUtR)
 - [x] 广播消息签名 (Gossipsub signed authenticity)
 
-### 待解决 (v0.2.0 MLS 版本重点)
+### 待解决 (v0.2.0 重点)
 
-- [ ] 广播消息端到端加密 → MLS 协议 (RFC 9420) 已列为 v0.2.0 核心目标
-- [ ] 密钥轮换策略 → MLS Update Path 提供自动密钥轮换
-- [ ] 群组消息的 Post-Compromise Security → MLS PCS 机制
+- [ ] 广播消息端到端加密 → Sender Key + HybridKem 分发，trait 隔离后端可替换
+- [ ] 密钥轮换策略 → 成员变更触发 re-key，定期轮换可选
+- [ ] 群组消息的 Post-Compromise Security → v0.2.0 仅弱 PCS (re-key)；未来 MLS 升级获得完整 PCS
 - [ ] MITM 防御 (需要 out-of-band 身份验证，如指纹比对)
 - [ ] 抗 DoS / Sybil 攻击
