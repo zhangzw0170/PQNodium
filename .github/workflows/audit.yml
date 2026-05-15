@@ -15,10 +15,8 @@ jobs:
       - run: cargo install cargo-audit
       - run: |
           cargo audit \
-            # hickory-proto via libp2p — no fixed upgrade available (alpha dependency)
             --ignore RUSTSEC-2026-0118 \
             --ignore RUSTSEC-2026-0119 \
-            # gtk-rs GTK3 bindings unmaintained — transitive via Tauri (Linux webview)
             --ignore RUSTSEC-2024-0370 \
             --ignore RUSTSEC-2024-0411 \
             --ignore RUSTSEC-2024-0412 \
@@ -30,13 +28,15 @@ jobs:
             --ignore RUSTSEC-2024-0418 \
             --ignore RUSTSEC-2024-0419 \
             --ignore RUSTSEC-2024-0420 \
-            # glib VariantStrIter unsound — transitive via Tauri (Linux webview)
             --ignore RUSTSEC-2024-0429 \
-            # pango unmaintained — transitive via Tauri (Linux webview)
             --ignore RUSTSEC-2024-0436 \
-            # unic-* crates unmaintained — transitive via Tauri urlpattern
             --ignore RUSTSEC-2025-0075 \
             --ignore RUSTSEC-2025-0080 \
             --ignore RUSTSEC-2025-0081 \
             --ignore RUSTSEC-2025-0098 \
             --ignore RUSTSEC-2025-0100
+        # hickory-proto (0118, 0119): CPU exhaustion + NSEC3 unbounded loop via libp2p, no fixed upgrade
+        # gtk-rs GTK3 (0370, 0411-0420): unmaintained, transitive via Tauri Linux webview
+        # glib (0429): VariantStrIter unsound, transitive via Tauri
+        # pango (0436): unmaintained, transitive via Tauri
+        # unic-* (0075, 0080, 0081, 0098, 0100): unmaintained, transitive via Tauri urlpattern
