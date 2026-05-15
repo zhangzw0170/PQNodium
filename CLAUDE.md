@@ -163,17 +163,21 @@ Each version release resets phase numbering back to 1. See `doc/start/03_technic
 | 7 | Gossipsub integration tests (2-node, 3-node) | Done |
 | 8 | Message deduplication via content hash | Done |
 
-### v0.2.0 (next) — MLS group encryption
+### v0.2.0 (next) — Group encryption with pluggable backend
 
-| Phase | Scope |
-|-------|-------|
-| 1 | MLS research & crate selection |
-| 2 | MLS core adapter (pluggable, aligns with crypto traits) |
-| 3 | Group lifecycle (create, invite, remove, epoch management) |
-| 4 | Encrypted broadcast integration (MLS + Gossipsub + Envelope) |
-| 5 | Key rotation & Post-Compromise Security |
-| 6 | Group integration tests |
-| 7 | CLI group commands |
+Research complete (`doc/start/v0.2.0_mls_research.md`). Starting with Sender Key + HybridKem (zero new deps). Architecture uses trait-based isolation so backend is swappable (Sender Key → MLS → mKEM) without modifying upper layers.
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Research & selection | Done |
+| 2 | Group cipher trait definitions (`GroupCipher`, `GroupKeyDistributor`, `GroupSessionManager`) | |
+| 3 | Sender Key backend (HybridKem distribution, Chain Key ratchet, AEAD) | |
+| 4 | Group lifecycle (create, invite, remove, re-key, dissolve) | |
+| 5 | P2P integration (Envelope payload encryption, Gossipsub encrypted broadcast) | |
+| 6 | Group integration tests (2-node, 3-node, member changes) | |
+| 7 | CLI group commands (`/group create`, `/group invite`, `/group leave`) | |
+
+New module: `pqnodium-core/src/group/` with `traits.rs`, `sender_key/`, future `mls/` and `mkem/` backends behind feature flags.
 
 ### v0.3.0 (future) — Tauri GUI (React + TypeScript + Tailwind)
 ### v0.4.0 (future) — Platform expansion (macOS, Android)

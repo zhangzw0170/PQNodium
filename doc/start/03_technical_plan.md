@@ -236,37 +236,150 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 
 **交付成果**: PQC Hybrid 握手, 加密消息互发 (ChaCha20-Poly1305), Win↔Linux 互通, NAT 穿透, 广播消息签名+去重, 194 tests 全部通过。
 
-## v0.2.0 — MLS 群组加密 (计划中)
+## v0.2.0 — 群组加密 (进行中)
 
-> 基于 RFC 9420 (Messaging Layer Security) 实现端到端加密群组通信。
+> 先实现 Sender Key + HybridKem 分发方案，架构预留标准 MLS 替换能力。
+
+### 核心架构约束: 可替换性
+
+群组加密后端**必须**可在不修改上层代码的情况下整体替换（Sender Key → MLS → mKEM）。
+实现方式：对齐现有 `crypto/traits/` 的 pluggable 模式。
+
+```
+┌─────────────────────────────────────────────────┐
+│  pqnodium-cli / src-tauri                        │  消费者层
+│  /group create, /group invite, TUI 显示          │  不感知加密后端
+├─────────────────────────────────────────────────┤
+│  pqnodium-p2p: PqNode                           │  P2P 层
+│  publish_encrypted(), handle_group_message()     │  仅依赖 trait
+├─────────────────────────────────────────────────┤
+│  pqnodium-core: group                           │  群组抽象层
+│  ┌─────────────────────────────────────────────┐ │
+│  │ trait GroupCipher                           │ │  群组加密 trait
+│  │   + GroupKeyDistributor                     │ │  密钥分发 trait
+│  │   + GroupSessionManager                     │ │  会话管理 trait
+│  ├─────────────┬───────────────┬───────────────┤ │
+│  │ sender_key  │ mls_adapter   │ mkem_adapter  │ │  可替换后端
+│  │ (v0.2.0)    │ (future)      │ (future)      │ │
+│  └─────────────┴───────────────┴───────────────┘ │
+├─────────────────────────────────────────────────┤
+│  pqnodium-core: crypto                          │  已有加密原语
+│  HybridKem, HybridSig, AEAD                     │
+└─────────────────────────────────────────────────┘
+```
+
+**trait 设计原则**:
+- 上层 (p2p, cli) 仅依赖 trait，不 import 具体 backend
+- 每个 backend 在独立 feature flag 后面 (`sender-key`, `mls`, `mkem`)
+- 默认 feature = `sender-key`
+- trait 方法不暴露具体协议概念 (如 "epoch", "tree")，只暴露通用操作
+
+### Phase 规划
 
 | Phase | 目标 | 关键交付 |
 |-------|------|---------|
-| **Phase 1** | MLS 调研与选型 | 调研 `openmls` / `mls-rs` crate，评估成熟度、PQC 兼容性、API 稳定性；输出选型报告 |
-| **Phase 2** | MLS Core Adapter | 封装 MLS 为 pluggable adapter（对齐现有 crypto trait 架构），KeyPackage 创建/解析，Welcome 消息处理 |
-| **Phase 3** | 群组生命周期 | 创建群组、邀请成员、移除成员、群组解散；MLS Epoch 管理 |
-| **Phase 4** | 加密广播集成 | 将 MLS 加密层与现有 Gossipsub + Envelope 管道对接，替换明文广播为加密广播 |
-| **Phase 5** | 密钥轮换与 PCS | Post-Compromise Security：Update Path、自主密钥更新、epoch 过渡期间的消息安全 |
-| **Phase 6** | 群组集成测试 | 多成员群组加解密、成员变更后的前向/后向安全、大规模群组性能基准 |
-| **Phase 7** | CLI 群组命令 | `/group create`, `/group invite`, `/group list`, `/group leave` 等交互命令 |
+| **Phase 1** | 调研与选型 | ✅ 完成 — 见 `doc/start/v0.2.0_mls_research.md` |
+| **Phase 2** | 群组加密 trait 定义 | 在 `pqnodium-core/src/group/` 定义 `GroupCipher`, `GroupKeyDistributor`, `GroupSessionManager` trait |
+| **Phase 3** | Sender Key 后端实现 | `sender_key` backend: 组密钥生成、HybridKem 封装分发、Chain Key ratchet、AEAD 加解密 |
+| **Phase 4** | 群组生命周期管理 | `GroupManager`: 创建群组、邀请/移除成员、re-key、群组解散 |
+| **Phase 5** | P2P 集成 | Envelope payload 加密、Gossipsub 加密广播、管理消息点对点投递 |
+| **Phase 6** | 集成测试 | 2-node/3-node 群组加密、成员变更 re-key、与现有 dedup 兼容 |
+| **Phase 7** | CLI 群组命令 | `/group create`, `/group invite`, `/group list`, `/group leave` |
 
-### MLS 技术要点
+### 群组加密 trait 设计 (草案)
 
-- **RFC 9420** 标准，提供 Forward Secrecy (FS) + Post-Compromise Security (PCS)
-- **Tree-based group key**：基于 Ratchet Tree 的群组密钥管理，成员变更仅影响局部路径
-- **PQC 兼容性**：MLS 支持 HPKE (Hybrid Public Key Encryption)，可结合 ML-KEM 作为 KEM 算法
-- **候选 crate**:
-  - `openmls` — Rust MLS 实现，社区活跃但 API 仍在演进
-  - `mls-rs` — AWS 维护，较新但可能有 AWS 偏向
-  - 最终选型取决于 Phase 1 调研结果
+```rust
+// pqnodium-core/src/group/traits.rs
+
+/// 群组消息加解密
+pub trait GroupCipher: Send + Sync {
+    type Error: std::error::Error;
+
+    /// 加密群组消息，返回密文
+    fn encrypt(&self, group_id: &GroupId, plaintext: &[u8]) -> Result<Vec<u8>, Self::Error>;
+
+    /// 解密群组消息
+    fn decrypt(&self, group_id: &GroupId, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
+/// 组密钥分发 (封装/解封)
+pub trait GroupKeyDistributor: Send + Sync {
+    type Error: std::error::Error;
+    type PublicKey: AsRef<[u8]>;
+
+    /// 为 N 个成员封装组密钥，返回每人一份的加密密钥
+    fn distribute(
+        &self,
+        group_key: &[u8],
+        recipient_pks: &[Self::PublicKey],
+    ) -> Result<Vec<Vec<u8>>, Self::Error>;
+
+    /// 解封属于自己的那份组密钥
+    fn recover(&self, encrypted_key: &[u8]) -> Result<Vec<u8>, Self::Error>;
+}
+
+/// 群组会话管理 (创建/加入/离开/轮换)
+pub trait GroupSessionManager: Send + Sync {
+    type Error: std::error::Error;
+    type GroupInfo;
+    type MemberId;
+
+    /// 创建新群组
+    fn create_group(&mut self, members: &[Self::MemberId]) -> Result<Self::GroupInfo, Self::Error>;
+
+    /// 添加成员 (触发 re-key)
+    fn add_member(&mut self, group_id: &GroupId, member: &Self::MemberId)
+        -> Result<(), Self::Error>;
+
+    /// 移除成员 (触发 re-key)
+    fn remove_member(&mut self, group_id: &GroupId, member: &Self::MemberId)
+        -> Result<(), Self::Error>;
+
+    /// 主动轮换密钥
+    fn rotate_key(&mut self, group_id: &GroupId) -> Result<(), Self::Error>;
+}
+```
+
+### 模块结构
+
+```
+pqnodium-core/src/
+  group/                        # 新模块
+    mod.rs                      # pub mod traits, sender_key
+    traits.rs                   # GroupCipher, GroupKeyDistributor, GroupSessionManager
+    sender_key/                 # v0.2.0 默认后端
+      mod.rs                    # SenderKeyCipher, SenderKeyDistributor, SenderKeyManager
+      chain.rs                  # Chain Key ratchet (H1/H2 分裂)
+      group_session.rs          # GroupSession 状态机
+    mls/                        # future: MLS 后端 (feature = "mls")
+    mkem/                       # future: mKEM 后端 (feature = "mkem")
+    types.rs                    # GroupId, GroupMessage, GroupSetup, GroupReKey
+```
+
+### 升级路径
+
+| 版本 | 后端 | 说明 |
+|------|------|------|
+| v0.2.0 | `sender_key` | HybridKem 分发 + Chain Key ratchet, 零新依赖 |
+| v0.2.x | `sender_key` + `mkem` | mKEM 多接收者封装，带宽 9× 优化 |
+| v0.3.x | `mls` (可选) | OpenMLS PQC 合并后，feature flag 切换 |
 
 ### 依赖关系
 
 ```
-Phase 1 (调研) → Phase 2 (adapter) → Phase 3 (群组) → Phase 4 (广播集成)
-                                                        → Phase 5 (PCS)
-                                      → Phase 6 (测试，依赖 Phase 3+4)
-                                      → Phase 7 (CLI，依赖 Phase 3)
+Phase 1 (调研) ✅
+    ↓
+Phase 2 (trait 定义) ← 无依赖，纯接口
+    ↓
+Phase 3 (sender_key 实现) ← 依赖 Phase 2 trait
+    ↓
+Phase 4 (群组生命周期) ← 依赖 Phase 3
+    ↓
+Phase 5 (P2P 集成) ← 依赖 Phase 4
+    ↓
+Phase 6 (测试) ← 依赖 Phase 5
+    ↓
+Phase 7 (CLI) ← 依赖 Phase 4
 ```
 
 ## v0.3.0 — Tauri GUI (远期)
