@@ -18,7 +18,7 @@ impl AsRef<[u8]> for MlKem768PublicKey {
     }
 }
 
-#[derive(Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct MlKem768SecretKey {
     decapsulation_key: Vec<u8>,
 }

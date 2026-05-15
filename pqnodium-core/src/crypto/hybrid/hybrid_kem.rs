@@ -33,6 +33,19 @@ pub struct HybridKemSecretKey<K1: KeyEncapsulation, K2: KeyEncapsulation> {
     pub pqc: K2::SecretKey,
 }
 
+impl<K1: KeyEncapsulation, K2: KeyEncapsulation> Clone for HybridKemSecretKey<K1, K2>
+where
+    K1::SecretKey: Clone,
+    K2::SecretKey: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            classic: self.classic.clone(),
+            pqc: self.pqc.clone(),
+        }
+    }
+}
+
 /// Hybrid KEM combining a classical KEM with a PQC KEM.
 ///
 /// SharedSecret = KDF(classic_ss || pqc_ss) where KDF is SHA-256.
