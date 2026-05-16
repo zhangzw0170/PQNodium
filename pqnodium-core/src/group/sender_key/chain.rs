@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn ck_initial_different_from_group_key() {
         let gk = test_group_key();
-        let ck = ChainKey::initial(&gk, &test_sender_a());
+        let _ck = ChainKey::initial(&gk, &test_sender_a());
         // Chain key bytes should differ from raw group key (SHA-256 hashing)
         // We verify by comparing message keys derived from CK vs raw group key
         let (mk_from_ck, _) = ChainKey::derive_at_step(&gk, &test_sender_a(), 0).unwrap();

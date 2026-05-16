@@ -31,6 +31,7 @@ const KEM_BUNDLE_LEN: usize = 1122 + 12 + 48;
 /// Each instance is bound to one group and one sender identity. Encryption
 /// advances the sender's chain step; decryption is stateless (derives any
 /// sender's chain key from the shared group key on demand).
+#[derive(Debug)]
 pub struct SenderKeyCipher {
     group_key: [u8; 32],
     my_sender_id: [u8; 32],
@@ -171,6 +172,7 @@ struct GroupState {
 }
 
 /// Distribution payload delivered to members on group creation or re-key.
+#[derive(Debug, Clone)]
 pub struct SenderKeyDistributionPayload {
     /// The group this payload belongs to.
     pub group_id: GroupId,
