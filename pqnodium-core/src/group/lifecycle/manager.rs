@@ -1083,4 +1083,333 @@ mod tests {
         }
         assert!(mgr.check_replay(&gid, [0xaa; 32], 50).is_err());
     }
+
+    // ─── Additional edge case tests ───
+
+    #[test]
+    fn apply_welcome_type_works_like_create() {
+        let (mut mgr_a, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, mut create_env) = mgr_a.propose_create(members).unwrap();
+
+        // Change type to GroupWelcome — should be accepted identically
+        create_env.msg_type = GroupControlMessageType::GroupWelcome;
+        let wire = create_env.encode();
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let result = mgr_b.apply_control(&wire).unwrap();
+        assert_eq!(result.group_id, gid);
+        assert!(result.cipher.is_some());
+        assert_eq!(mgr_b.members(&gid).unwrap().len(), 3);
+        assert_eq!(mgr_b.epoch(&gid).unwrap(), 0);
+
+        // Verify cipher works
+        let mut cipher = result.cipher.unwrap();
+        let ct = cipher.encrypt(b"welcome test").unwrap();
+        assert_eq!(cipher.decrypt(&ct).unwrap(), b"welcome test");
+    }
+
+    #[test]
+    fn apply_mutation_missing_distribution_rejected() {
+        let (mut mgr_a, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr_a.propose_create(members).unwrap();
+
+        // Build a GroupAdd envelope without distribution payload
+        let envelope = GroupControlEnvelope {
+            msg_type: GroupControlMessageType::GroupAdd,
+            epoch: 1,
+            group_id: gid.clone(),
+            proposer_id: peers[0].peer_id.clone(),
+            distribution: None,
+        };
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let result = mgr_b.apply_envelope(&envelope);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("distribution payload"));
+    }
+
+    #[test]
+    fn apply_create_missing_distribution_rejected() {
+        let (_, peers) = setup_manager(3);
+        let gid = GroupId::from_bytes([0x99; 32]);
+        let envelope = GroupControlEnvelope {
+            msg_type: GroupControlMessageType::GroupCreate,
+            epoch: 0,
+            group_id: gid,
+            proposer_id: peers[0].peer_id.clone(),
+            distribution: None,
+        };
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let result = mgr_b.apply_envelope(&envelope);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("distribution payload"));
+    }
+
+    #[test]
+    fn acknowledge_non_member_rejected() {
+        let (mut mgr, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        let outsider = PeerId::from_bytes([0xFF; 32]);
+        let result = mgr.acknowledge(&gid, 0, &outsider);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::MemberNotFound
+        ));
+    }
+
+    #[test]
+    fn check_replay_nonexistent_group() {
+        let (_, _) = setup_manager(2);
+        let (mut mgr, _) = setup_manager(1);
+        let gid = GroupId::from_bytes([0xEE; 32]);
+        let result = mgr.check_replay(&gid, [0x01; 32], 1);
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::GroupNotFound
+        ));
+    }
+
+    #[test]
+    fn propose_batch_mixed_add_remove() {
+        let (mut mgr, peers) = setup_manager(5);
+        let members: Vec<PeerId> = peers[0..4].iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        let new_peer = &peers[4];
+        let remove_peer = &peers[3];
+        let result = mgr.propose_batch(
+            &gid,
+            &[new_peer.peer_id.clone()],
+            &[remove_peer.peer_id.clone()],
+        );
+        assert!(result.is_ok());
+
+        let (mut cipher, envelope) = result.unwrap();
+        assert_eq!(envelope.msg_type, GroupControlMessageType::GroupRekey);
+        assert_eq!(envelope.epoch, 1);
+
+        // Members should now be [0,1,2,4] — 3 removed, 4 added
+        let current_members = mgr.members(&gid).unwrap();
+        assert_eq!(current_members.len(), 4);
+        assert!(current_members.contains(&peers[0].peer_id));
+        assert!(!current_members.contains(&peers[3].peer_id));
+        assert!(current_members.contains(&peers[4].peer_id));
+
+        // Cipher should work
+        let ct = cipher.encrypt(b"batch test").unwrap();
+        assert_eq!(cipher.decrypt(&ct).unwrap(), b"batch test");
+    }
+
+    #[test]
+    fn propose_batch_applied_cross_node() {
+        let (mut mgr_a, peers) = setup_manager(4);
+        let members: Vec<PeerId> = peers[0..3].iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, create_env) = mgr_a.propose_create(members).unwrap();
+
+        let new_peer = &peers[3];
+        let (mut cipher_a, batch_env) = mgr_a
+            .propose_batch(&gid, &[new_peer.peer_id.clone()], &[])
+            .unwrap();
+
+        // B applies create then batch
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let _ = mgr_b.apply_control(&create_env.encode()).unwrap();
+        let result_b = mgr_b.apply_control(&batch_env.encode()).unwrap();
+        assert!(result_b.cipher.is_some());
+        assert_eq!(mgr_b.members(&gid).unwrap().len(), 4);
+
+        // Cross-encrypt
+        let ct = cipher_a.encrypt(b"batch cross").unwrap();
+        let cipher_b = result_b.cipher.unwrap();
+        assert_eq!(cipher_b.decrypt(&ct).unwrap(), b"batch cross");
+    }
+
+    #[test]
+    fn flush_pending_mixed_adds_and_removes() {
+        let (mut mgr, peers) = setup_manager(5);
+        let members: Vec<PeerId> = peers[0..4].iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        mgr.queue_add(&gid, peers[4].peer_id.clone()).unwrap();
+        mgr.queue_remove(&gid, peers[3].peer_id.clone()).unwrap();
+
+        let (mut cipher, envelope) = mgr.flush_pending(&gid).unwrap();
+        assert_eq!(envelope.epoch, 1);
+        let current = mgr.members(&gid).unwrap();
+        assert_eq!(current.len(), 4);
+        assert!(current.contains(&peers[4].peer_id));
+        assert!(!current.contains(&peers[3].peer_id));
+
+        let ct = cipher.encrypt(b"mixed flush").unwrap();
+        assert_eq!(cipher.decrypt(&ct).unwrap(), b"mixed flush");
+    }
+
+    #[test]
+    fn dissolved_group_query_returns_dissolved() {
+        let (mut mgr, peers) = setup_manager(2);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+        mgr.propose_dissolve(&gid).unwrap();
+
+        let info = mgr.group_info(&gid).unwrap();
+        assert_eq!(info.status, GroupStatus::Dissolved);
+        assert_eq!(info.epoch, 1);
+    }
+
+    #[test]
+    fn propose_on_pending_conflicts() {
+        let (mut mgr, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        // Queue a pending add
+        mgr.queue_add(&gid, PeerId::from_bytes([0xBB; 32])).unwrap();
+
+        // Propose add should conflict
+        let result = mgr.propose_add(&gid, &PeerId::from_bytes([0xCC; 32]));
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::ProposalConflict
+        ));
+
+        // Propose remove should also conflict
+        let result = mgr.propose_remove(&gid, &peers[1].peer_id);
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::ProposalConflict
+        ));
+
+        // Propose rekey should also conflict
+        let result = mgr.propose_rekey(&gid);
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::ProposalConflict
+        ));
+    }
+
+    #[test]
+    fn apply_mutation_on_dissolved_rejected() {
+        let (mut mgr_a, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, create_env) = mgr_a.propose_create(members).unwrap();
+
+        // Dissolve at epoch 1
+        let dissolve_env = mgr_a.propose_dissolve(&gid).unwrap();
+
+        // B applies create (epoch 0) then dissolve (epoch 1)
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let _ = mgr_b.apply_control(&create_env.encode()).unwrap();
+        mgr_b.apply_control(&dissolve_env.encode()).unwrap();
+
+        // B tries to apply create again — should fail (group already exists, dissolved)
+        let result = mgr_b.apply_control(&create_env.encode());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn register_member_pk_delegation_works() {
+        let (mut mgr, _) = setup_manager(1);
+        let peer = TestPeer::generate();
+        mgr.register_member_pk(peer.peer_id.clone(), peer.hybrid_pk.clone());
+
+        // Should be able to add this peer to a group
+        let (gid, _, _) = mgr.propose_create(vec![mgr.my_peer_id.clone()]).unwrap();
+        let result = mgr.propose_add(&gid, &peer.peer_id);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn pending_acks_returns_all_epochs() {
+        let (mut mgr, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        // All 3 members are pending at epoch 0
+        let acks = mgr.pending_acks(&gid).unwrap();
+        assert_eq!(acks.len(), 1);
+        assert_eq!(acks[0].0, 0);
+        assert_eq!(acks[0].1.len(), 3); // all 3 unacked
+
+        // Ack epoch 0 with member 1 — now 2 pending
+        mgr.acknowledge(&gid, 0, &peers[1].peer_id).unwrap();
+        let acks = mgr.pending_acks(&gid).unwrap();
+        assert_eq!(acks[0].1.len(), 2); // member 0 and 2 still pending
+        assert!(!acks[0].1.iter().any(|m| m == peers[1].peer_id.as_bytes()));
+    }
+
+    #[test]
+    fn stress_1000_epochs() {
+        let (mut mgr, peers) = setup_manager(2);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, _) = mgr.propose_create(members).unwrap();
+
+        for i in 0..1000 {
+            let (_, env) = mgr.propose_rekey(&gid).unwrap();
+            assert_eq!(env.epoch, i as u64 + 1);
+        }
+        assert_eq!(mgr.epoch(&gid).unwrap(), 1000);
+    }
+
+    #[test]
+    fn large_group_lifecycle_50_members() {
+        let (mut mgr, peers) = setup_manager(50);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, mut cipher, create_env) = mgr.propose_create(members.clone()).unwrap();
+
+        // Apply on receiver
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        let _result = mgr_b.apply_control(&create_env.encode()).unwrap();
+        assert_eq!(mgr_b.members(&gid).unwrap().len(), 50);
+
+        // Remove 10 members
+        for i in 10..20 {
+            let (_, env) = mgr.propose_remove(&gid, &peers[i].peer_id).unwrap();
+            mgr_b.apply_control(&env.encode()).unwrap();
+        }
+        assert_eq!(mgr.members(&gid).unwrap().len(), 40);
+        assert_eq!(mgr_b.members(&gid).unwrap().len(), 40);
+
+        // Cross-encrypt still works
+        let ct = cipher.encrypt(b"large group msg").unwrap();
+        assert_eq!(cipher.decrypt(&ct).unwrap(), b"large group msg");
+    }
+
+    #[test]
+    fn apply_wrong_epoch_stale_rejected() {
+        let (mut mgr_a, peers) = setup_manager(4);
+        let members: Vec<PeerId> = peers[0..3].iter().map(|p| p.peer_id.clone()).collect();
+        let (gid, _, create_env) = mgr_a.propose_create(members).unwrap();
+
+        // Create an add at epoch 1
+        let (_, add_env) = mgr_a.propose_add(&gid, &peers[3].peer_id).unwrap();
+
+        // B applies create then add — now at epoch 1
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        mgr_b.apply_control(&create_env.encode()).unwrap();
+        mgr_b.apply_control(&add_env.encode()).unwrap();
+
+        // Replay the same epoch 1 message — should fail (now expects epoch 2)
+        let result = mgr_b.apply_control(&add_env.encode());
+        assert!(matches!(
+            result.unwrap_err(),
+            GroupLifecycleError::EpochMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn apply_create_wrong_version_rejected() {
+        let (mut mgr, peers) = setup_manager(3);
+        let members: Vec<PeerId> = peers.iter().map(|p| p.peer_id.clone()).collect();
+        let (_, _, envelope) = mgr.propose_create(members).unwrap();
+        let mut bytes = envelope.encode();
+        // Corrupt version byte
+        bytes[0] = 0x99;
+        let mut mgr_b = make_joiner_mgr(&peers[1], &peers);
+        assert!(mgr_b.apply_control(&bytes).is_err());
+    }
 }
