@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn dispatch_unknown_passthrough() {
-        let payload = vec![0xFF, 0x01, 0x02, 0x03];
+        let payload: &[u8] = &[0xFF, 0x01, 0x02, 0x03];
         let first_byte = payload[0];
         assert!(!is_control_type(first_byte));
         assert!(!is_handshake_type(first_byte));
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn dispatch_pairwise_passthrough() {
-        let payload = vec![0x01, 0x00, 0x00, 0x00]; // version byte for handshake
+        let payload: &[u8] = &[0x01, 0x00, 0x00, 0x00]; // version byte for handshake
         assert!(is_handshake_type(payload[0]));
     }
 
@@ -600,7 +600,7 @@ mod tests {
         let (_, _) = setup_lifecycle(2);
         let gid = GroupId::from_bytes([0xEE; 32]);
         let ciphers: HashMap<[u8; 32], SenderKeyCipher> = HashMap::new();
-        assert!(ciphers.get(gid.as_bytes()).is_none());
+        assert!(!ciphers.contains_key(gid.as_bytes()));
     }
 
     #[test]

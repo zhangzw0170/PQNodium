@@ -1195,8 +1195,8 @@ mod tests {
         let remove_peer = &peers[3];
         let result = mgr.propose_batch(
             &gid,
-            &[new_peer.peer_id.clone()],
-            &[remove_peer.peer_id.clone()],
+            std::slice::from_ref(&new_peer.peer_id),
+            std::slice::from_ref(&remove_peer.peer_id),
         );
         assert!(result.is_ok());
 
@@ -1224,7 +1224,7 @@ mod tests {
 
         let new_peer = &peers[3];
         let (mut cipher_a, batch_env) = mgr_a
-            .propose_batch(&gid, &[new_peer.peer_id.clone()], &[])
+            .propose_batch(&gid, std::slice::from_ref(&new_peer.peer_id), &[])
             .unwrap();
 
         // B applies create then batch
@@ -1378,8 +1378,8 @@ mod tests {
         assert_eq!(mgr_b.members(&gid).unwrap().len(), 50);
 
         // Remove 10 members
-        for i in 10..20 {
-            let (_, env) = mgr.propose_remove(&gid, &peers[i].peer_id).unwrap();
+        for peer in &peers[10..20] {
+            let (_, env) = mgr.propose_remove(&gid, &peer.peer_id).unwrap();
             mgr_b.apply_control(&env.encode()).unwrap();
         }
         assert_eq!(mgr.members(&gid).unwrap().len(), 40);

@@ -226,7 +226,7 @@ mod tests {
             let gid = GroupId::random();
             let key = [0x42u8; 32];
             let dist = MockDistributor;
-            let pks: Vec<Vec<u8>> = members.iter().cloned().collect();
+            let pks: Vec<Vec<u8>> = members.to_vec();
             let encrypted_keys = dist.distribute(&key, &pks).unwrap();
             self.groups.insert(*gid.as_bytes(), members.to_vec());
             let payload = MockDistributionPayload {
@@ -755,8 +755,8 @@ mod tests {
         let mut mgr = MockManager::new();
         let mut gids = Vec::new();
         for i in 0u8..200 {
-            let member = vec![i];
-            let (gid, mut cipher, _) = mgr.create_group(&[member.clone()]).unwrap();
+            let member = [i];
+            let (gid, mut cipher, _) = mgr.create_group(&[member.to_vec()]).unwrap();
             let ct = cipher.encrypt(&[i]).unwrap();
             assert_eq!(cipher.decrypt(&ct).unwrap(), vec![i]);
             gids.push(gid);

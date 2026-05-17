@@ -159,8 +159,8 @@ mod tests {
             // Derive CK_0 bytes manually
             let mut hasher = Sha256::new();
             hasher.update(CK_LABEL);
-            hasher.update(&test_group_key());
-            hasher.update(&test_sender_a());
+            hasher.update(test_group_key());
+            hasher.update(test_sender_a());
             let hash: [u8; 32] = hasher.finalize().into();
             hash
         };
@@ -168,7 +168,7 @@ mod tests {
         let expected_mk: [u8; 32] = {
             let mut hasher = Sha256::new();
             hasher.update(H1_LABEL);
-            hasher.update(&ck0_bytes);
+            hasher.update(ck0_bytes);
             hasher.finalize().into()
         };
 
@@ -186,8 +186,8 @@ mod tests {
         let mut ck_bytes: [u8; 32] = {
             let mut hasher = Sha256::new();
             hasher.update(CK_LABEL);
-            hasher.update(&test_group_key());
-            hasher.update(&test_sender_a());
+            hasher.update(test_group_key());
+            hasher.update(test_sender_a());
             hasher.finalize().into()
         };
 
@@ -195,7 +195,7 @@ mod tests {
         for _ in 0..3 {
             let mut hasher = Sha256::new();
             hasher.update(H2_LABEL);
-            hasher.update(&ck_bytes);
+            hasher.update(ck_bytes);
             ck_bytes = hasher.finalize().into();
         }
 
@@ -203,7 +203,7 @@ mod tests {
         let expected: [u8; 32] = {
             let mut hasher = Sha256::new();
             hasher.update(H1_LABEL);
-            hasher.update(&ck_bytes);
+            hasher.update(ck_bytes);
             hasher.finalize().into()
         };
 

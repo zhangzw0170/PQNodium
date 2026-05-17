@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn payload_large_group() {
-        let members: Vec<PeerId> = (0..50).map(|i| test_peer_id(i)).collect();
+        let members: Vec<PeerId> = (0..50).map(test_peer_id).collect();
         let encrypted_keys: Vec<Vec<u8>> = (0..50).map(|i| vec![i; 200]).collect();
         let p = SenderKeyDistributionPayload {
             group_id: test_group_id(),
