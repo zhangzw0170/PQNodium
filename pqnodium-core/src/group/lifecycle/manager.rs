@@ -375,7 +375,18 @@ impl GroupLifecycleManager {
             }
             GroupControlMessageType::GroupAdd
             | GroupControlMessageType::GroupRemove
-            | GroupControlMessageType::GroupRekey => self.apply_mutation(envelope),
+            | GroupControlMessageType::GroupRekey => match self.apply_mutation(envelope) {
+                Ok(r) => Ok(r),
+                Err(_)
+                    if !self
+                        .lifecycle_states
+                        .contains_key(envelope.group_id.as_bytes())
+                        && envelope.msg_type == GroupControlMessageType::GroupAdd =>
+                {
+                    self.apply_create_or_welcome(envelope)
+                }
+                Err(e) => Err(e),
+            },
             GroupControlMessageType::GroupDissolve => self.apply_dissolve(envelope),
         }
     }
