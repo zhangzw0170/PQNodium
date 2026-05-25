@@ -20,7 +20,15 @@ impl AsRef<[u8]> for MlKem768PublicKey {
 
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct MlKem768SecretKey {
-    decapsulation_key: Vec<u8>,
+    pub decapsulation_key: Vec<u8>,
+}
+
+impl MlKem768SecretKey {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            decapsulation_key: bytes,
+        }
+    }
 }
 
 pub struct MlKem768Kem;

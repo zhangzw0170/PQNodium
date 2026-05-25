@@ -169,7 +169,14 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         "○"
     };
 
-    let title = Line::from(vec![
+    let group_color = if state.group_count > 0 {
+        palette::PURPLE
+    } else {
+        palette::TEXT_DIM
+    };
+    let group_icon = if state.group_count > 0 { "◉" } else { "○" };
+
+    let mut spans = vec![
         Span::styled(
             " PQNodium ",
             Style::default()
@@ -188,7 +195,23 @@ fn render_status_bar(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         ),
         Span::styled("│", Style::default().fg(palette::TEXT_MUTED)),
         nat_text,
-    ]);
+    ];
+
+    if !state.pqnodium_id_display.is_empty() {
+        spans.push(Span::styled("│", Style::default().fg(palette::TEXT_MUTED)));
+        spans.push(Span::styled(
+            format!(" ID:{} ", state.pqnodium_id_display),
+            Style::default().fg(palette::PURPLE),
+        ));
+    }
+
+    spans.push(Span::styled("│", Style::default().fg(palette::TEXT_MUTED)));
+    spans.push(Span::styled(
+        format!(" {group_icon} {} group(s) ", state.group_count),
+        Style::default().fg(group_color),
+    ));
+
+    let title = Line::from(spans);
 
     let status_bar = Paragraph::new(title).style(Style::default().bg(palette::STATUS_BG));
     frame.render_widget(status_bar, area);

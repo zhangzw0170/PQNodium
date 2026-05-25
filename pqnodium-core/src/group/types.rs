@@ -19,6 +19,28 @@ impl GroupId {
         Self(bytes)
     }
 
+    /// Construct from a 64-character lowercase hex string.
+    pub fn from_hex(hex: &str) -> Self {
+        let mut bytes = [0u8; 32];
+        let hex_lower = hex.to_ascii_lowercase();
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            let start = i * 2;
+            let end = start + 2;
+            let byte_str = if end <= hex_lower.len() {
+                &hex_lower[start..end]
+            } else {
+                "00"
+            };
+            *byte = u8::from_str_radix(byte_str, 16).unwrap_or(0);
+        }
+        Self(bytes)
+    }
+
+    /// Return the full 64-character lowercase hex representation.
+    pub fn to_hex(&self) -> String {
+        self.0.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
     /// Access the raw bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
