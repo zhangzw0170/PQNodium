@@ -1,0 +1,58 @@
+import { Button, VerticalBox, HorizontalBox, LineEdit } from "std-widgets.slint";
+
+export component App inherits Window {
+    title: "PQNodium";
+    preferred-width: 900px;
+    preferred-height: 700px;
+    background: #1a1a2e;
+
+    in-out property <string> status-text: "Disconnected";
+    in-out property <string> my-peer-id: "";
+
+    callback send-message(string);
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        alignment: center;
+
+        Text {
+            text: "PQNodium";
+            font-size: 24px;
+            font-weight: 700;
+            color: #e0e0e0;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "Post-Quantum Secure P2P Messaging";
+            font-size: 12px;
+            color: #888;
+            horizontal-alignment: center;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 8px;
+            Text {
+                text: "Status:";
+                color: #aaa;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.status-text;
+                color: #0f0;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: "Peer ID: " + root.my-peer-id;
+            font-size: 11px;
+            color: #666;
+            horizontal-alignment: center;
+        }
+    }
+}

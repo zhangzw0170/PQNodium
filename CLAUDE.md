@@ -15,8 +15,8 @@ PQNodium is a post-quantum secure, decentralized messaging protocol built with R
 cargo build --release -p pqnodium-cli          # CLI binary
 cargo build --release -p pqnodium-core         # Core library
 cargo build --release -p pqnodium-p2p          # P2P library
-cargo tauri dev                                 # Tauri app (frontend not yet scaffolded)
-cargo tauri build                               # Tauri release build
+cargo build --release -p pqnodium-gui          # Slint GUI binary
+cargo run -p pqnodium-gui                      # Run GUI (dev mode)
 cross build --target x86_64-unknown-linux-gnu --release  # Cross-compile Win → Linux
 
 # Test
@@ -34,19 +34,19 @@ cargo clippy -- -D warnings                    # Lint (warnings as errors)
 cargo audit                                    # Dependency vulnerability scan
 ```
 
-Prerequisites: Rust 1.80+, CMake, Node.js 18+ (for Tauri). See `doc/build/BUILD.md` for details.
+Prerequisites: Rust 1.80+, CMake, C++ compiler (for Slint femtovg backend). See `doc/build/BUILD.md` for details.
 
 ## Architecture
 
 ### Crate Dependency Graph
 
 ```
-pqnodium-core  ←  pqnodium-p2p  ←  pqnodium-cli
-                  (libp2p)        (tokio + clap)
-                  pqnodium-core  ←  src-tauri (Tauri v2 app shell)
+pqnodium-core  ←  pqnodium-p2p  ←  pqnodium-cli (tokio + clap + ratatui TUI)
+                  (libp2p)
+                  pqnodium-core  ←  pqnodium-gui (Slint 原生 GUI)
 ```
 
-`pqnodium-core` has zero async/network dependencies. `pqnodium-p2p` wraps libp2p behind a `PqNode` API. Both `pqnodium-cli` and `src-tauri` are consumers.
+`pqnodium-core` has zero async/network dependencies. `pqnodium-p2p` wraps libp2p behind a `PqNode` API. Both `pqnodium-cli` and `pqnodium-gui` are consumers.
 
 ### pqnodium-core: Crypto & Protocol
 
