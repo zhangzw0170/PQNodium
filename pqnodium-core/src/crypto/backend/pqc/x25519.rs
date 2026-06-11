@@ -12,7 +12,7 @@ impl AsRef<[u8]> for X25519PublicKey {
     }
 }
 
-#[derive(Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct X25519SecretKey([u8; 32]);
 
 impl X25519SecretKey {

@@ -26,7 +26,7 @@ See our detailed [Threat Model](./architecture/threat_model.md).
 
 | Version | Supported          |
 | ------- | ------------------ |
-| < 0.1.0 | ❌ Development only |
+| < v0.1 | ❌ Development only |
 
 ## Security Reviews
 

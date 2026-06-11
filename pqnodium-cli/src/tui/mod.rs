@@ -2,9 +2,14 @@ pub mod command;
 pub mod render;
 
 use libp2p::Multiaddr;
+use pqnodium_core::crypto::backend::pqc::ml_kem::MlKem768Kem;
+use pqnodium_core::crypto::backend::pqc::x25519::X25519Kem;
+use pqnodium_core::crypto::hybrid::hybrid_kem::HybridKemPublicKey;
 use pqnodium_core::envelope::Envelope;
+use pqnodium_core::group::types::GroupId;
+use pqnodium_core::identity::PeerId;
 use pqnodium_p2p::event::PqEvent;
-use pqnodium_p2p::node::PqNode;
+use pqnodium_p2p::group::{GroupEvent, GroupNode};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::DefaultTerminal;
 use std::collections::HashSet;
@@ -13,7 +18,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
-use command::{event_to_log, handle_command_result, shorten_peer_id, submit_input};
+use command::{
+    group_event_to_log, handle_command_result, p2p_event_to_log, shorten_peer_id, submit_input,
+};
 use render::LogEntry;
 
 const MAX_DEDUP_MESSAGES: usize = 10000;
@@ -32,6 +39,10 @@ struct AppState {
     connected_count: usize,
     nat_public: Option<bool>,
     seen_messages: HashSet<[u8; 32]>,
+    pqnodium_id: String,
+    pqnodium_id_display: String,
+    kem_fingerprint: String,
+    group_count: usize,
 }
 
 impl AppState {
@@ -49,6 +60,10 @@ impl AppState {
             connected_count: 0,
             nat_public: None,
             seen_messages: HashSet::new(),
+            pqnodium_id: String::new(),
+            pqnodium_id_display: String::new(),
+            kem_fingerprint: String::new(),
+            group_count: 0,
         }
     }
 
@@ -79,12 +94,37 @@ impl AppState {
 // ── Commands ───────────────────────────────────────────────────────────
 
 enum NodeCommand {
+    // Existing P2P commands
     GetPeerId(oneshot::Sender<String>),
     GetListeners(oneshot::Sender<Vec<Multiaddr>>),
     GetConnectedPeers(oneshot::Sender<Vec<String>>),
     Dial(String, oneshot::Sender<Result<(), String>>),
     ListenOnRelay(String, oneshot::Sender<Result<(), String>>),
     Publish(Vec<u8>, oneshot::Sender<Result<(), String>>),
+    // Key management
+    GetKemPublicKey(oneshot::Sender<String>),
+    GetKemFingerprint(oneshot::Sender<String>),
+    GetPqnodiumId(oneshot::Sender<String>),
+    RegisterMemberPk(
+        PeerId,
+        HybridKemPublicKey<X25519Kem, MlKem768Kem>,
+        oneshot::Sender<Result<(), String>>,
+    ),
+    // Group operations
+    GroupCreate(Vec<PeerId>, oneshot::Sender<Result<GroupId, String>>),
+    GroupInvite(GroupId, PeerId, oneshot::Sender<Result<(), String>>),
+    GroupList(oneshot::Sender<Vec<GroupSummary>>),
+    GroupMembers(GroupId, oneshot::Sender<Result<Vec<PeerId>, String>>),
+    GroupLeave(GroupId, oneshot::Sender<Result<(), String>>),
+    GroupSend(GroupId, Vec<u8>, oneshot::Sender<Result<(), String>>),
+    GroupRekey(GroupId, oneshot::Sender<Result<(), String>>),
+    GroupDissolve(GroupId, oneshot::Sender<Result<(), String>>),
+}
+
+struct GroupSummary {
+    group_id: String,
+    epoch: u64,
+    member_count: usize,
 }
 
 enum CommandResult {
@@ -94,10 +134,23 @@ enum CommandResult {
     DialResult(Result<(), String>),
     RelayResult(Result<(), String>),
     PublishResult(Result<(), String>),
+    KemPublicKey(String),
+    KemFingerprint(String),
+    PqnodiumId(String),
+    MemberPkRegistered(String),
+    GroupCreated(String),
+    GroupInvited(String),
+    GroupList(Vec<GroupSummary>),
+    GroupMembersList(String, Vec<String>),
+    GroupLeft(String),
+    GroupMessageSent(String),
+    GroupRekeyed(String),
+    GroupDissolved(String),
+    GroupError(String),
 }
 
 enum AppMessage {
-    PqEvent(PqEvent),
+    GroupEvent(GroupEvent),
     CommandResponse(CommandResult),
     SendMessage(String),
 }
@@ -122,10 +175,12 @@ fn spawn_keyboard_thread(tx: mpsc::UnboundedSender<KeyEvent>) -> std::thread::Jo
     })
 }
 
-// ── Event poller task (owns PqNode) ────────────────────────────────────
+// ── Event poller task (owns GroupNode) ───────────────────────────────────
 
 fn spawn_event_poller(
-    mut node: PqNode,
+    mut node: GroupNode,
+    my_peer_id: PeerId,
+    kem_pk: HybridKemPublicKey<X25519Kem, MlKem768Kem>,
     mut cmd_rx: mpsc::UnboundedReceiver<NodeCommand>,
     msg_tx: mpsc::UnboundedSender<AppMessage>,
 ) {
@@ -133,12 +188,12 @@ fn spawn_event_poller(
         loop {
             tokio::select! {
                 Some(cmd) = cmd_rx.recv() => {
-                    handle_node_command(cmd, &mut node, &msg_tx).await;
+                    handle_node_command(cmd, &mut node, &my_peer_id, &kem_pk, &msg_tx).await;
                 }
                 event = node.poll_next() => {
                     match event {
-                        Some(pq_event) => {
-                            let _ = msg_tx.send(AppMessage::PqEvent(pq_event));
+                        Some(group_event) => {
+                            let _ = msg_tx.send(AppMessage::GroupEvent(group_event));
                         }
                         None => break,
                     }
@@ -150,35 +205,114 @@ fn spawn_event_poller(
 
 async fn handle_node_command(
     cmd: NodeCommand,
-    node: &mut PqNode,
+    node: &mut GroupNode,
+    my_peer_id: &PeerId,
+    kem_pk: &HybridKemPublicKey<X25519Kem, MlKem768Kem>,
     _msg_tx: &mpsc::UnboundedSender<AppMessage>,
 ) {
     match cmd {
         NodeCommand::GetPeerId(reply) => {
-            let _ = reply.send(node.peer_id().to_string());
+            let _ = reply.send(node.p2p().peer_id().to_string());
         }
         NodeCommand::GetListeners(reply) => {
-            let _ = reply.send(node.listeners().to_vec());
+            let _ = reply.send(node.p2p().listeners().to_vec());
         }
         NodeCommand::GetConnectedPeers(reply) => {
-            let _ = reply.send(node.connected_peers());
+            let _ = reply.send(node.p2p().connected_peers());
         }
         NodeCommand::Dial(addr_str, reply) => {
             let result = match addr_str.parse::<Multiaddr>() {
-                Ok(addr) => node.dial(addr).map_err(|e| e.to_string()),
+                Ok(addr) => node.p2p_mut().dial(addr).map_err(|e| e.to_string()),
                 Err(e) => Err(format!("invalid address: {e}")),
             };
             let _ = reply.send(result);
         }
         NodeCommand::ListenOnRelay(addr_str, reply) => {
             let result = match addr_str.parse::<Multiaddr>() {
-                Ok(addr) => node.listen_on_relay(addr).map_err(|e| e.to_string()),
+                Ok(addr) => node
+                    .p2p_mut()
+                    .listen_on_relay(addr)
+                    .map_err(|e| e.to_string()),
                 Err(e) => Err(format!("invalid relay address: {e}")),
             };
             let _ = reply.send(result);
         }
         NodeCommand::Publish(data, reply) => {
-            let result = node.publish(&data).map_err(|e| e.to_string());
+            let result = node.p2p_mut().publish(&data).map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GetKemPublicKey(reply) => {
+            let _ = reply.send(crate::export_hybrid_pk_base64(kem_pk));
+        }
+        NodeCommand::GetKemFingerprint(reply) => {
+            let _ = reply.send(crate::kem_fingerprint(kem_pk));
+        }
+        NodeCommand::GetPqnodiumId(reply) => {
+            let _ = reply.send(my_peer_id.to_string());
+        }
+        NodeCommand::RegisterMemberPk(peer_id, pk, reply) => {
+            node.register_member_pk(peer_id, pk);
+            let _ = reply.send(Ok(()));
+        }
+        NodeCommand::GroupCreate(members, reply) => {
+            let result = node.propose_create(members);
+            let res = match result {
+                Ok((gid, _)) => Ok(gid),
+                Err(e) => Err(e.to_string()),
+            };
+            let _ = reply.send(res);
+        }
+        NodeCommand::GroupInvite(gid, member, reply) => {
+            let result = node
+                .propose_add(&gid, &member)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GroupList(reply) => {
+            let groups = node.list_groups();
+            let summaries: Vec<GroupSummary> = groups
+                .into_iter()
+                .map(|g| GroupSummary {
+                    group_id: g.group_id.to_hex(),
+                    epoch: g.epoch,
+                    member_count: g.members.len(),
+                })
+                .collect();
+            let _ = reply.send(summaries);
+        }
+        NodeCommand::GroupMembers(gid, reply) => {
+            let result = node
+                .group_info(&gid)
+                .map(|info| info.members)
+                .map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GroupLeave(gid, reply) => {
+            let result = node
+                .propose_remove(&gid, my_peer_id)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GroupSend(gid, plaintext, reply) => {
+            let result = node
+                .send_group_message(&gid, &plaintext)
+                .map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GroupRekey(gid, reply) => {
+            let result = node
+                .propose_rekey(&gid)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = reply.send(result);
+        }
+        NodeCommand::GroupDissolve(gid, reply) => {
+            let result = node
+                .propose_dissolve(&gid)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
             let _ = reply.send(result);
         }
     }
@@ -266,37 +400,52 @@ fn run_app(
 
         while let Ok(msg) = msg_rx.try_recv() {
             match msg {
-                AppMessage::PqEvent(event) => {
+                AppMessage::GroupEvent(event) => {
                     match &event {
-                        PqEvent::PeerConnected { .. } => state.connected_count += 1,
-                        PqEvent::PeerDisconnected { .. } => {
-                            state.connected_count = state.connected_count.saturating_sub(1)
-                        }
-                        PqEvent::NatStatus { is_public } => state.nat_public = Some(*is_public),
-                        PqEvent::MessageReceived { data, .. } => {
-                            if let Ok(env) = Envelope::decode(data) {
-                                let hash = env.content_hash();
-                                if !state.seen_messages.insert(hash) {
-                                    continue;
+                        GroupEvent::P2P(pq_event) => {
+                            match pq_event {
+                                PqEvent::PeerConnected { .. } => state.connected_count += 1,
+                                PqEvent::PeerDisconnected { .. } => {
+                                    state.connected_count = state.connected_count.saturating_sub(1)
                                 }
-                                if state.seen_messages.len() > MAX_DEDUP_MESSAGES {
-                                    let remove_count =
-                                        state.seen_messages.len() - MAX_DEDUP_MESSAGES / 2;
-                                    let hashes: Vec<[u8; 32]> = state
-                                        .seen_messages
-                                        .iter()
-                                        .take(remove_count)
-                                        .copied()
-                                        .collect();
-                                    for h in hashes {
-                                        state.seen_messages.remove(&h);
+                                PqEvent::NatStatus { is_public } => {
+                                    state.nat_public = Some(*is_public)
+                                }
+                                PqEvent::MessageReceived { data, .. } => {
+                                    if let Ok(env) = Envelope::decode(data) {
+                                        let hash = env.content_hash();
+                                        if !state.seen_messages.insert(hash) {
+                                            continue;
+                                        }
+                                        if state.seen_messages.len() > MAX_DEDUP_MESSAGES {
+                                            let remove_count =
+                                                state.seen_messages.len() - MAX_DEDUP_MESSAGES / 2;
+                                            let hashes: Vec<[u8; 32]> = state
+                                                .seen_messages
+                                                .iter()
+                                                .take(remove_count)
+                                                .copied()
+                                                .collect();
+                                            for h in hashes {
+                                                state.seen_messages.remove(&h);
+                                            }
+                                        }
                                     }
                                 }
+                                _ => {}
                             }
+                            state.push_log(p2p_event_to_log(pq_event));
                         }
-                        _ => {}
+                        GroupEvent::GroupControlApplied { .. } => {
+                            state.group_count = state.group_count.saturating_add(1);
+                        }
+                        GroupEvent::GroupMessage { .. } => {}
+                        GroupEvent::GroupDissolved { .. } => {
+                            state.group_count = state.group_count.saturating_sub(1);
+                        }
+                        GroupEvent::MalformedMessage { .. } => {}
                     }
-                    state.push_log(event_to_log(&event));
+                    state.push_log(group_event_to_log(&event));
                 }
                 AppMessage::CommandResponse(result) => {
                     handle_command_result(&result, &mut state);
@@ -337,7 +486,13 @@ fn run_app(
 
 // ── Public entry point ─────────────────────────────────────────────────
 
-pub fn run_tui_with_peer_id(node: PqNode, peer_id: String) -> anyhow::Result<()> {
+pub fn run_tui_with_peer_id(
+    node: GroupNode,
+    pqnodium_id: String,
+    libp2p_peer_id: String,
+    kem_fingerprint: String,
+    kem_pk: HybridKemPublicKey<X25519Kem, MlKem768Kem>,
+) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
 
     let (keyboard_tx, keyboard_rx) = mpsc::unbounded_channel::<KeyEvent>();
@@ -347,10 +502,24 @@ pub fn run_tui_with_peer_id(node: PqNode, peer_id: String) -> anyhow::Result<()>
     let _ = MSG_TX.set(msg_tx.clone());
 
     let _keyboard_handle = spawn_keyboard_thread(keyboard_tx);
-    spawn_event_poller(node, cmd_rx, msg_tx);
 
-    let mut state = AppState::new(peer_id);
+    let core_peer_id = match crate::parse_peer_id(&pqnodium_id) {
+        Ok(id) => id,
+        Err(e) => {
+            ratatui::restore();
+            anyhow::bail!("invalid PQNodium ID: {e}");
+        }
+    };
+
+    spawn_event_poller(node, core_peer_id, kem_pk, cmd_rx, msg_tx);
+
+    let mut state = AppState::new(libp2p_peer_id);
+    state.pqnodium_id_display = shorten_peer_id(&pqnodium_id);
+    state.pqnodium_id = pqnodium_id;
+    state.kem_fingerprint = kem_fingerprint;
     state.push_success("PQNodium started");
+    state.push_info(format!("Identity: {}", state.pqnodium_id));
+    state.push_info(format!("KEM: {}", state.kem_fingerprint));
     state.push_info("Type /help for commands  ·  ↑↓ scroll  ·  Ctrl+C quit");
 
     let result = run_app(&mut terminal, state, keyboard_rx, msg_rx, cmd_tx);
@@ -458,19 +627,19 @@ mod tests {
         assert!(state.logs[0].text.contains("[sending]"));
     }
 
-    // ── event_to_log ──────────────────────────────────────────────────
+    // ── p2p_event_to_log ──────────────────────────────────────────────
 
     #[test]
     fn event_to_log_nat_public() {
         let event = PqEvent::NatStatus { is_public: true };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("public"));
     }
 
     #[test]
     fn event_to_log_nat_private() {
         let event = PqEvent::NatStatus { is_public: false };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("private"));
     }
 
@@ -480,7 +649,7 @@ mod tests {
             relay_peer_id: "12D3Relay".to_string(),
             accepted: true,
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("accepted"));
     }
 
@@ -490,7 +659,7 @@ mod tests {
             relay_peer_id: "12D3Relay".to_string(),
             accepted: false,
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("failed"));
     }
 
@@ -499,7 +668,7 @@ mod tests {
         let event = PqEvent::DirectConnectionUpgraded {
             peer_id: "12D3Peer".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("DCUtR"));
         assert!(entry.text.contains("12D3Peer"));
     }
@@ -508,7 +677,7 @@ mod tests {
     fn event_to_log_listening() {
         let addr: Multiaddr = "/ip4/127.0.0.1/udp/1234/quic-v1".parse().unwrap();
         let event = PqEvent::Listening { address: addr };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("listening"));
     }
 
@@ -517,7 +686,7 @@ mod tests {
         let event = PqEvent::PeerConnected {
             peer_id: "12D3Test".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("connected"));
     }
 
@@ -526,7 +695,7 @@ mod tests {
         let event = PqEvent::PeerDisconnected {
             peer_id: "12D3Test".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("disconnected"));
     }
 
@@ -535,7 +704,7 @@ mod tests {
         let event = PqEvent::InboundConnectionError {
             error: "timeout".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("timeout"));
     }
 
@@ -545,7 +714,7 @@ mod tests {
             peer_id: "12D3P".to_string(),
             error: "refused".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("refused"));
     }
 
@@ -554,7 +723,7 @@ mod tests {
         let event = PqEvent::UnknownEvent {
             description: "something".to_string(),
         };
-        let entry = event_to_log(&event);
+        let entry = p2p_event_to_log(&event);
         assert!(entry.text.contains("something"));
     }
 

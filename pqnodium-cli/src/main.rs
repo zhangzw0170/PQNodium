@@ -2,9 +2,16 @@ mod tui;
 
 use clap::Parser;
 use hmac::Hmac;
+use pqnodium_core::crypto::backend::pqc::ml_kem::MlKem768Kem;
+use pqnodium_core::crypto::backend::pqc::x25519::X25519Kem;
+use pqnodium_core::crypto::hybrid::hybrid_kem::{
+    HybridKem, HybridKemPublicKey, HybridKemSecretKey,
+};
+use pqnodium_core::crypto::traits::kem::KeyEncapsulation;
 use pqnodium_core::envelope::Envelope;
-use pqnodium_core::identity::Identity;
+use pqnodium_core::identity::{Identity, PeerId};
 use pqnodium_p2p::config::PqNodeConfig;
+use pqnodium_p2p::group::GroupNode;
 use pqnodium_p2p::node::PqNode;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -35,6 +42,9 @@ enum Cli {
         /// Identity file path
         #[arg(short, long, default_value = "identity.bin")]
         identity: PathBuf,
+        /// KEM identity file path (HybridKem keypair for group encryption)
+        #[arg(long, default_value = "kem-identity.bin")]
+        kem_identity: PathBuf,
         /// Act as a relay server for other nodes (requires public IP)
         #[arg(long)]
         relay_server: bool,
@@ -58,13 +68,15 @@ async fn main() -> anyhow::Result<()> {
             listen,
             bootstrap,
             identity,
+            kem_identity,
             relay_server,
             relay,
             no_tui,
         } => {
             let config = build_config(&listen, &bootstrap, relay_server)?;
             let id = load_or_generate_identity(&identity)?;
-            cmd_start(config, id, relay, no_tui).await
+            let kem = load_or_generate_kem_identity(&kem_identity)?;
+            cmd_start(config, id, kem, relay, no_tui).await
         }
     }
 }
@@ -299,9 +311,171 @@ fn load_or_generate_identity(path: &PathBuf) -> anyhow::Result<Identity> {
     }
 }
 
+// ─── KEM Identity ───
+
+pub(crate) struct KemIdentity {
+    pub public_key: HybridKemPublicKey<X25519Kem, MlKem768Kem>,
+    pub secret_key: HybridKemSecretKey<X25519Kem, MlKem768Kem>,
+}
+
+const KEM_IDENTITY_MAGIC: &[u8] = b"pqnodium-kem-identity-v1";
+
+fn save_kem_identity(
+    pk: &HybridKemPublicKey<X25519Kem, MlKem768Kem>,
+    sk: &HybridKemSecretKey<X25519Kem, MlKem768Kem>,
+    path: &PathBuf,
+) -> anyhow::Result<()> {
+    let x25519_pk = pk.classic.as_ref();
+    let ml_kem_pk = pk.pqc.as_ref();
+    let x25519_sk = sk.classic.as_bytes();
+    let ml_kem_sk = &sk.pqc.decapsulation_key;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(KEM_IDENTITY_MAGIC);
+    data.extend_from_slice(x25519_pk);
+    data.extend_from_slice(ml_kem_pk);
+    data.extend_from_slice(x25519_sk);
+    data.extend_from_slice(ml_kem_sk);
+
+    let hmac_key = derive_hmac_key(x25519_sk, ml_kem_sk);
+    let hmac = compute_hmac(&hmac_key, &data);
+    data.extend_from_slice(&hmac);
+
+    std::fs::write(path, &data)?;
+    set_owner_only_permissions(path)?;
+    Ok(())
+}
+
+fn load_or_generate_kem_identity(path: &PathBuf) -> anyhow::Result<KemIdentity> {
+    if path.exists() {
+        info!("Loading KEM identity from {}", path.display());
+        warn_if_permissions_too_open(path);
+        let data = std::fs::read(path)?;
+
+        let min_size = KEM_IDENTITY_MAGIC.len() + 32 + 1184 + 32 + 2400 + IDENTITY_HMAC_SIZE;
+        if data.len() < min_size {
+            anyhow::bail!("KEM identity file too small");
+        }
+        if &data[..KEM_IDENTITY_MAGIC.len()] != KEM_IDENTITY_MAGIC {
+            anyhow::bail!("invalid KEM identity file: bad magic bytes");
+        }
+
+        let key_data = &data[..data.len() - IDENTITY_HMAC_SIZE];
+        let stored_hmac: [u8; IDENTITY_HMAC_SIZE] = data[data.len() - IDENTITY_HMAC_SIZE..]
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid HMAC"))?;
+
+        let mut pos = KEM_IDENTITY_MAGIC.len();
+        let x25519_pk_bytes: [u8; 32] = key_data[pos..pos + 32].try_into().unwrap();
+        pos += 32;
+        let ml_kem_pk_bytes = &key_data[pos..pos + 1184];
+        pos += 1184;
+        let x25519_sk_bytes: [u8; 32] = key_data[pos..pos + 32].try_into().unwrap();
+        pos += 32;
+        let ml_kem_sk_bytes = &key_data[pos..pos + 2400];
+
+        let hmac_key = derive_hmac_key(&x25519_sk_bytes, ml_kem_sk_bytes);
+        if !verify_hmac(&hmac_key, key_data, &stored_hmac) {
+            anyhow::bail!("KEM identity file integrity check failed (HMAC mismatch)");
+        }
+
+        use pqnodium_core::crypto::backend::pqc::ml_kem::MlKem768PublicKey;
+        use pqnodium_core::crypto::backend::pqc::x25519::X25519PublicKey;
+
+        let pk = HybridKemPublicKey {
+            classic: X25519PublicKey(x25519_pk_bytes),
+            pqc: MlKem768PublicKey {
+                encoded: ml_kem_pk_bytes.to_vec(),
+            },
+        };
+
+        use pqnodium_core::crypto::backend::pqc::ml_kem::MlKem768SecretKey;
+        use pqnodium_core::crypto::backend::pqc::x25519::X25519SecretKey;
+
+        let sk = HybridKemSecretKey {
+            classic: X25519SecretKey::from_bytes(x25519_sk_bytes),
+            pqc: MlKem768SecretKey {
+                decapsulation_key: ml_kem_sk_bytes.to_vec(),
+            },
+        };
+
+        info!("Loaded KEM identity, fingerprint: {}", kem_fingerprint(&pk));
+        Ok(KemIdentity {
+            public_key: pk,
+            secret_key: sk,
+        })
+    } else {
+        info!("Generating new KEM identity...");
+        let mut rng = rand::rngs::OsRng;
+        let (pk, sk) = HybridKem::<X25519Kem, MlKem768Kem>::keygen(&mut rng);
+        save_kem_identity(&pk, &sk, path)?;
+        info!("Saved KEM identity to {}", path.display());
+        info!("KEM fingerprint: {}", kem_fingerprint(&pk));
+        Ok(KemIdentity {
+            public_key: pk,
+            secret_key: sk,
+        })
+    }
+}
+
+pub(crate) fn kem_fingerprint(pk: &HybridKemPublicKey<X25519Kem, MlKem768Kem>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(pk.classic.as_ref());
+    hasher.update(pk.pqc.as_ref());
+    let hash: [u8; 32] = hasher.finalize().into();
+    hex::encode(&hash[..8])
+}
+
+pub(crate) fn export_hybrid_pk_base64(pk: &HybridKemPublicKey<X25519Kem, MlKem768Kem>) -> String {
+    use base64::Engine;
+    let mut buf = Vec::with_capacity(32 + 1184);
+    buf.extend_from_slice(pk.classic.as_ref());
+    buf.extend_from_slice(pk.pqc.as_ref());
+    base64::engine::general_purpose::STANDARD.encode(&buf)
+}
+
+pub(crate) fn import_hybrid_pk_base64(
+    b64: &str,
+) -> Result<HybridKemPublicKey<X25519Kem, MlKem768Kem>, String> {
+    use base64::Engine;
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    if data.len() != 32 + 1184 {
+        return Err(format!(
+            "invalid key length: expected 1216 bytes, got {}",
+            data.len()
+        ));
+    }
+    let x25519_pk: [u8; 32] = data[..32]
+        .try_into()
+        .map_err(|_| "invalid x25519 pk".to_string())?;
+    let ml_kem_pk = data[32..].to_vec();
+
+    use pqnodium_core::crypto::backend::pqc::ml_kem::MlKem768PublicKey;
+    use pqnodium_core::crypto::backend::pqc::x25519::X25519PublicKey;
+
+    Ok(HybridKemPublicKey {
+        classic: X25519PublicKey(x25519_pk),
+        pqc: MlKem768PublicKey { encoded: ml_kem_pk },
+    })
+}
+
+pub(crate) fn parse_peer_id(hex: &str) -> Result<PeerId, String> {
+    let bytes = hex::decode(hex).map_err(|e| format!("invalid hex: {e}"))?;
+    if bytes.len() != 32 {
+        return Err(format!("PeerId must be 32 bytes, got {}", bytes.len()));
+    }
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| "conversion error".to_string())?;
+    Ok(PeerId::from_bytes(arr))
+}
+
 async fn cmd_start(
     config: PqNodeConfig,
     identity: Identity,
+    kem: KemIdentity,
     relay_addrs: Vec<String>,
     no_tui: bool,
 ) -> anyhow::Result<()> {
@@ -348,52 +522,89 @@ async fn cmd_start(
         }
     }
 
-    let peer_id_str = node.peer_id().to_string();
+    let core_peer_id = identity.peer_id().clone();
+    let libp2p_id_str = node.peer_id().to_string();
+    let kem_fp = kem_fingerprint(&kem.public_key);
+    info!("KEM fingerprint: {kem_fp}");
+
+    let mut group_node = GroupNode::new(
+        node,
+        core_peer_id.clone(),
+        kem.secret_key,
+        libp2p_id_str.clone(),
+    );
+    group_node.register_member_pk(core_peer_id.clone(), kem.public_key.clone());
 
     if no_tui {
-        run_headless(node, peer_id_str).await
+        run_headless(group_node, core_peer_id.to_string()).await
     } else {
-        tui::run_tui_with_peer_id(node, peer_id_str)
+        tui::run_tui_with_peer_id(
+            group_node,
+            core_peer_id.to_string(),
+            libp2p_id_str,
+            kem_fp,
+            kem.public_key,
+        )
     }
 }
 
-async fn run_headless(mut node: PqNode, _local_peer_id: String) -> anyhow::Result<()> {
+async fn run_headless(mut node: GroupNode, _local_peer_id: String) -> anyhow::Result<()> {
     use pqnodium_p2p::event::PqEvent;
+    use pqnodium_p2p::group::GroupEvent;
     loop {
         if let Some(event) = node.poll_next().await {
             match event {
-                PqEvent::Listening { address } => info!("listening on {address}"),
-                PqEvent::PeerConnected { peer_id } => info!("peer connected: {peer_id}"),
-                PqEvent::PeerDisconnected { peer_id } => info!("peer disconnected: {peer_id}"),
-                PqEvent::MessageReceived { from, data } => {
-                    if let Ok(env) = Envelope::decode(&data) {
-                        let text = String::from_utf8_lossy(&env.payload);
-                        info!("message from {}: {text}", env.sender_id);
-                    } else {
-                        let text = String::from_utf8_lossy(&data);
-                        info!("raw message from {from}: {text}");
+                GroupEvent::P2P(pq_event) => match pq_event {
+                    PqEvent::Listening { address } => info!("listening on {address}"),
+                    PqEvent::PeerConnected { peer_id } => info!("peer connected: {peer_id}"),
+                    PqEvent::PeerDisconnected { peer_id } => info!("peer disconnected: {peer_id}"),
+                    PqEvent::MessageReceived { from, data } => {
+                        if let Ok(env) = Envelope::decode(&data) {
+                            let text = String::from_utf8_lossy(&env.payload);
+                            info!("message from {}: {text}", env.sender_id);
+                        } else {
+                            let text = String::from_utf8_lossy(&data);
+                            info!("raw message from {from}: {text}");
+                        }
                     }
-                }
-                PqEvent::NatStatus { is_public } => {
-                    info!(
-                        "NAT status: {}",
-                        if is_public { "public" } else { "private" }
-                    );
-                }
-                PqEvent::RelayReservation {
-                    relay_peer_id,
-                    accepted,
+                    PqEvent::NatStatus { is_public } => {
+                        info!(
+                            "NAT status: {}",
+                            if is_public { "public" } else { "private" }
+                        );
+                    }
+                    PqEvent::RelayReservation {
+                        relay_peer_id,
+                        accepted,
+                    } => {
+                        info!(
+                            "relay reservation {relay_peer_id}: {}",
+                            if accepted { "accepted" } else { "rejected" }
+                        );
+                    }
+                    PqEvent::PeerDiscovered { peer_id, addresses } => {
+                        let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
+                        info!("discovered peer {peer_id} via {}", addrs.join(", "));
+                    }
+                    _ => {}
+                },
+                GroupEvent::GroupMessage {
+                    group_id,
+                    sender_id,
+                    plaintext,
                 } => {
-                    info!(
-                        "relay reservation {relay_peer_id}: {}",
-                        if accepted { "accepted" } else { "rejected" }
-                    );
+                    let text = String::from_utf8_lossy(&plaintext);
+                    info!("[{group_id}] {sender_id}: {text}");
                 }
-                PqEvent::PeerDiscovered { peer_id, addresses } => {
-                    let addrs: Vec<String> = addresses.iter().map(|a| a.to_string()).collect();
-                    info!("discovered peer {peer_id} via {}", addrs.join(", "));
+                GroupEvent::GroupControlApplied { group_id, epoch } => {
+                    info!("group {group_id} updated (epoch {epoch})");
                 }
-                _ => {}
+                GroupEvent::GroupDissolved { group_id } => {
+                    info!("group {group_id} dissolved");
+                }
+                GroupEvent::MalformedMessage { from, reason } => {
+                    info!("malformed message from {from}: {reason}");
+                }
             }
         }
     }

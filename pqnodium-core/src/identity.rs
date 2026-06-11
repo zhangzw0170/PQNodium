@@ -22,6 +22,11 @@ impl PeerId {
         Self(hasher.finalize().into())
     }
 
+    /// Reconstruct a PeerId from raw 32 bytes.
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// Return the raw 32-byte PeerId.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
