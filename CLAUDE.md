@@ -163,21 +163,33 @@ Each version release resets phase numbering back to 1. See `doc/start/03_technic
 | 7 | Gossipsub integration tests (2-node, 3-node) | Done |
 | 8 | Message deduplication via content hash | Done |
 
-### v0.2 (next) — Group encryption with pluggable backend
+### v0.2 (released) — Group encryption with pluggable backend
 
-Research complete (`doc/start/v0.2_mls_research.md`). Starting with Sender Key + HybridKem (zero new deps). Architecture uses trait-based isolation so backend is swappable (Sender Key → MLS → mKEM) without modifying upper layers.
+Research (`doc/start/v0.2_mls_research.md`). Sender Key + HybridKem with trait-based backend isolation. 449 tests passing.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Research & selection | Done |
-| 2 | Group cipher trait definitions (`GroupCipher`, `GroupKeyDistributor`, `GroupSessionManager`) | |
-| 3 | Sender Key backend (HybridKem distribution, Chain Key ratchet, AEAD) | |
-| 4 | Group lifecycle (create, invite, remove, re-key, dissolve) | |
-| 5 | P2P integration (Envelope payload encryption, Gossipsub encrypted broadcast) | |
-| 6 | Group integration tests (2-node, 3-node, member changes) | |
-| 7 | CLI group commands (`/group create`, `/group invite`, `/group leave`) | |
+| 2 | Group cipher trait definitions | Done |
+| 3 | Sender Key backend (HybridKem, Chain Key ratchet, AEAD) | Done |
+| 4 | Group lifecycle (create, invite, remove, re-key, dissolve) | Done |
+| 5 | P2P integration (encrypted broadcast) | Done |
+| 6 | Group integration tests (2/3/8-node, member changes) | Done |
+| 7 | CLI group commands + KEM identity management | Done |
 
-New module: `pqnodium-core/src/group/` with `traits.rs`, `sender_key/`, future `mls/` and `mkem/` backends behind feature flags.
+### v0.3 (next) — Slint 原生 GUI
 
-### v0.3 (future) — Tauri GUI (React + TypeScript + Tailwind)
+Research complete (`doc/start/v0.3_slint_gui_research.md`). Stack: Slint 1.16 原生 GPU 渲染, 替代 Tauri+React。新 crate `pqnodium-gui`。
+
+Architecture: Slint 主线程 + Tokio 后台线程 (PqNode), mpsc 通道通信。
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Slint 项目搭建 (pqnodium-gui crate, build.rs, 基础窗口) | |
+| 2 | P2P 桥接 (tokio 后台线程, mpsc 通道, event 映射) | |
+| 3 | 聊天 UI (消息列表, 输入框, 联系人侧栏, 群组列表) | |
+| 4 | 主题 + i18n (dark/light, zh/en) | |
+| 5 | 设置页面 (身份管理, 网络配置) | |
+| 6 | 群组 GUI (create/invite/remove, 成员列表) | |
+
 ### v0.4 (future) — Platform expansion (macOS, Android)
