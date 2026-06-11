@@ -74,7 +74,7 @@ impl TestNode {
 
         let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
         let config = PqNodeConfig::new(listen_addr)
-            .with_agent_version("pqnodium-group-test/0.1.0")
+            .with_agent_version("pqnodium-group-test/0.2")
             .with_kad_timeout(Duration::from_secs(10));
 
         let mut p2p = PqNode::new(&config).unwrap();

@@ -148,7 +148,7 @@ All docs are in `doc/` with bilingual content. Key files:
 
 Each version release resets phase numbering back to 1. See `doc/start/03_technical_plan.md` for full details.
 
-### v0.1.0 (released) — historical phase numbering
+### v0.1 (released) — historical phase numbering
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -163,9 +163,9 @@ Each version release resets phase numbering back to 1. See `doc/start/03_technic
 | 7 | Gossipsub integration tests (2-node, 3-node) | Done |
 | 8 | Message deduplication via content hash | Done |
 
-### v0.2.0 (next) — Group encryption with pluggable backend
+### v0.2 (next) — Group encryption with pluggable backend
 
-Research complete (`doc/start/v0.2.0_mls_research.md`). Starting with Sender Key + HybridKem (zero new deps). Architecture uses trait-based isolation so backend is swappable (Sender Key → MLS → mKEM) without modifying upper layers.
+Research complete (`doc/start/v0.2_mls_research.md`). Starting with Sender Key + HybridKem (zero new deps). Architecture uses trait-based isolation so backend is swappable (Sender Key → MLS → mKEM) without modifying upper layers.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -179,5 +179,5 @@ Research complete (`doc/start/v0.2.0_mls_research.md`). Starting with Sender Key
 
 New module: `pqnodium-core/src/group/` with `traits.rs`, `sender_key/`, future `mls/` and `mkem/` backends behind feature flags.
 
-### v0.3.0 (future) — Tauri GUI (React + TypeScript + Tailwind)
-### v0.4.0 (future) — Platform expansion (macOS, Android)
+### v0.3 (future) — Tauri GUI (React + TypeScript + Tailwind)
+### v0.4 (future) — Platform expansion (macOS, Android)

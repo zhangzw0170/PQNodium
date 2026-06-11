@@ -3,7 +3,7 @@
 ## Branching Strategy
 
 ```
-main ────────────────────────── release ──── tag v0.1.0
+main ────────────────────────── release ──── tag v0.1
   │
   └── dev ────────────────────── active development
         │
@@ -96,5 +96,5 @@ chore(deps): bump ml-kem to 0.2.0
 ## Release
 
 1. 从 `dev` 合入 `main`（squash merge 或 merge commit）
-2. 打 tag：`v0.1.0`, `v0.2.0`（遵循 [Semantic Versioning](https://semver.org/)）
+2. 打 tag：`v0.1`, `v0.2`（遵循 [Semantic Versioning](https://semver.org/)）
 3. Tag message 简述本版本变更

@@ -213,11 +213,11 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 **每个版本发布后，Phase 编号从 1 重新开始。** 旧版本的 Phase 仅在该版本上下文中有意义。
 
 例如：
-- v0.1.0 包含 Phase 0–8（历史编号）
-- v0.2.0 从 Phase 1 开始重新计数（MLS 群组加密）
-- v0.3.0 再次从 Phase 1 开始（GUI / 平台扩展）
+- v0.1 包含 Phase 0–8（历史编号）
+- v0.2 从 Phase 1 开始重新计数（MLS 群组加密）
+- v0.3 再次从 Phase 1 开始（GUI / 平台扩展）
 
-## v0.1.0 — 首个发布版本 (已完成)
+## v0.1 — 首个发布版本 (已完成)
 
 > 历史编号 Phase 0–8，此版本使用原始编号。
 
@@ -236,7 +236,7 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 
 **交付成果**: PQC Hybrid 握手, 加密消息互发 (ChaCha20-Poly1305), Win↔Linux 互通, NAT 穿透, 广播消息签名+去重, 194 tests 全部通过。
 
-## v0.2.0 — 群组加密 (进行中)
+## v0.2 — 群组加密 (进行中)
 
 > 先实现 Sender Key + HybridKem 分发方案，架构预留标准 MLS 替换能力。
 
@@ -260,7 +260,7 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 │  │   + GroupSessionManager                     │ │  会话管理 trait
 │  ├─────────────┬───────────────┬───────────────┤ │
 │  │ sender_key  │ mls_adapter   │ mkem_adapter  │ │  可替换后端
-│  │ (v0.2.0)    │ (future)      │ (future)      │ │
+│  │ (v0.2)    │ (future)      │ (future)      │ │
 │  └─────────────┴───────────────┴───────────────┘ │
 ├─────────────────────────────────────────────────┤
 │  pqnodium-core: crypto                          │  已有加密原语
@@ -278,7 +278,7 @@ PQNodium 使用 ML-KEM 确保即使量子计算机出现，历史消息也无法
 
 | Phase | 目标 | 关键交付 |
 |-------|------|---------|
-| **Phase 1** | 调研与选型 | ✅ 完成 — 见 `doc/start/v0.2.0_mls_research.md` |
+| **Phase 1** | 调研与选型 | ✅ 完成 — 见 `doc/start/v0.2_mls_research.md` |
 | **Phase 2** | 群组加密 trait 定义 | 在 `pqnodium-core/src/group/` 定义 `GroupCipher`, `GroupKeyDistributor`, `GroupSessionManager` trait |
 | **Phase 3** | Sender Key 后端实现 | `sender_key` backend: 组密钥生成、HybridKem 封装分发、Chain Key ratchet、AEAD 加解密 |
 | **Phase 4** | 群组生命周期管理 | `GroupManager`: 创建群组、邀请/移除成员、re-key、群组解散 |
@@ -347,7 +347,7 @@ pqnodium-core/src/
   group/                        # 新模块
     mod.rs                      # pub mod traits, sender_key
     traits.rs                   # GroupCipher, GroupKeyDistributor, GroupSessionManager
-    sender_key/                 # v0.2.0 默认后端
+    sender_key/                 # v0.2 默认后端
       mod.rs                    # SenderKeyCipher, SenderKeyDistributor, SenderKeyManager
       chain.rs                  # Chain Key ratchet (H1/H2 分裂)
       group_session.rs          # GroupSession 状态机
@@ -360,7 +360,7 @@ pqnodium-core/src/
 
 | 版本 | 后端 | 说明 |
 |------|------|------|
-| v0.2.0 | `sender_key` | HybridKem 分发 + Chain Key ratchet, 零新依赖 |
+| v0.2 | `sender_key` | HybridKem 分发 + Chain Key ratchet, 零新依赖 |
 | v0.2.x | `sender_key` + `mkem` | mKEM 多接收者封装，带宽 9× 优化 |
 | v0.3.x | `mls` (可选) | OpenMLS PQC 合并后，feature flag 切换 |
 
@@ -448,7 +448,7 @@ Phase 7 (CLI) ← 依赖 Phase 4
 | Sender Key 无 PCS | 成员离组后 re-key 恢复安全；这是已知局限，MLS 升级后解决 |
 | 大组带宽线性增长 | 10-50 人可接受；100+ 人需等待 mKEM 优化 |
 
-## v0.3.0 — Tauri GUI (远期)
+## v0.3 — Tauri GUI (远期)
 
 | Phase | 目标 |
 |-------|------|
@@ -457,7 +457,7 @@ Phase 7 (CLI) ← 依赖 Phase 4
 | **Phase 3** | 主题系统 + 多语言 |
 | **Phase 4** | 设置页面 (身份管理、网络配置) |
 
-## v0.4.0 — 平台扩展 (远期)
+## v0.4 — 平台扩展 (远期)
 
 | Phase | 目标 |
 |-------|------|
@@ -478,10 +478,10 @@ Phase 7 (CLI) ← 依赖 Phase 4
 - [x] NAT 穿透 (AutoNAT + Relay v2 + DCUtR)
 - [x] 广播消息签名 (Gossipsub signed authenticity)
 
-### 待解决 (v0.2.0 重点)
+### 待解决 (v0.2 重点)
 
 - [ ] 广播消息端到端加密 → Sender Key + HybridKem 分发，trait 隔离后端可替换
 - [ ] 密钥轮换策略 → 成员变更触发 re-key，定期轮换可选
-- [ ] 群组消息的 Post-Compromise Security → v0.2.0 仅弱 PCS (re-key)；未来 MLS 升级获得完整 PCS
+- [ ] 群组消息的 Post-Compromise Security → v0.2 仅弱 PCS (re-key)；未来 MLS 升级获得完整 PCS
 - [ ] MITM 防御 (需要 out-of-band 身份验证，如指纹比对)
 - [ ] 抗 DoS / Sybil 攻击
